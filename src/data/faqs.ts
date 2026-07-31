@@ -1,0 +1,16 @@
+import type { Faq } from "@/types";
+
+export const faqs: Faq[] = [
+  { id: "f1", category: "Getting Started", question: "Who is Career Compass AI for?", answer: "Career Compass AI is built for Class 12 students who are deciding their next step after school — whether that's engineering, medicine, commerce, law, design, defence, civil services or studying abroad." },
+  { id: "f2", category: "Getting Started", question: "Is Career Compass AI free to use?", answer: "The core platform — career assessment, exploration and comparisons — is free. Premium features like the full DNA report and AI recommendations are unlocked with a student plan." },
+  { id: "f3", category: "Assessment", question: "How does the career assessment work?", answer: "It's a multi-step questionnaire that analyzes your interests, strengths, work style and goals. Your answers are matched against 30+ career domains to suggest the best-fit careers." },
+  { id: "f4", category: "Assessment", question: "How accurate is the career DNA report?", answer: "The DNA report uses established psychometric frameworks and your assessment answers to estimate personality fit, strengths and career match percentages. Use it as a guide, not an absolute verdict." },
+  { id: "f5", category: "Careers", question: "Are the career salary figures realistic?", answer: "Salary ranges are indicative figures based on industry surveys for entry-to-mid level roles in India. Actual packages vary by company, city and performance." },
+  { id: "f6", category: "Careers", question: "Can I compare two careers side by side?", answer: "Yes! The Career Comparison tool lets you pick any two careers and compare salary, demand, growth, fees, skills, pros and cons in a single view." },
+  { id: "f7", category: "Colleges", question: "How do I find the right college?", answer: "Use the College Finder to filter by state, district, cutoff, fees, placement, hostel and ranking. Every college card shows key stats at a glance." },
+  { id: "f8", category: "Scholarships", question: "How do scholarship deadlines work?", answer: "Scholarship cards show eligibility, benefits and deadlines. We also send deadline reminders so you never miss an application window." },
+  { id: "f9", category: "Exams", question: "Which entrance exams should I track?", answer: "The Entrance Exams section covers JEE, NEET, CUET, CLAT, NDA, BITSAT and more, with registration deadlines, dates and eligible domains for each." },
+  { id: "f10", category: "Data & Privacy", question: "What happens to my assessment data?", answer: "Your assessment responses power your personalized recommendations. We follow strict data protection practices and never share your data with third parties." },
+  { id: "f11", category: "Support", question: "How can I contact support?", answer: "Reach us via the Contact page, email us at hello@careercompass.ai, or explore the Help Center for step-by-step guides." },
+  { id: "f12", category: "Careers", question: "I'm interested in multiple streams. What should I do?", answer: "That's completely normal! Complete the assessment and compare your top careers. Many students keep multiple doors open — for example engineering with a management or UPSC backup." },
+];
