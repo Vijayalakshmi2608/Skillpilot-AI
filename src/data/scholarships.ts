@@ -1,0 +1,14 @@
+import type { Scholarship } from "@/types";
+
+export const scholarships: Scholarship[] = [
+  { id: "ntse", name: "NTSE", provider: "NCERT", amount: "₹1,250/month", eligibility: ["Class 10 students", "State-level selection", "Merit-based"], deadline: "Nov 2026", benefits: ["Monthly scholarship till PG", "National recognition"], category: "Merit" },
+  { id: "nsp", name: "National Scholarship Portal", provider: "Govt. of India", amount: "₹12,000/year", eligibility: ["Class 11-12 students", "Family income < ₹4.5L", "90%+ in class 10"], deadline: "Dec 2026", benefits: ["Direct bank transfer", "Renewable yearly"], category: "Central" },
+  { id: "cbs", name: "Central Sector Scholarship", provider: "Ministry of Education", amount: "₹12,000/year", eligibility: ["Class 12 students", "Top 80 percentile in boards", "Stream: any"], deadline: "Jan 2027", benefits: ["20,000 scholarships yearly", "College + school levels"], category: "Central" },
+  { id: "bse", name: "Bharat Scholarship for Engineering", provider: "BSE", amount: "₹25,000/year", eligibility: ["Engineering aspirants", "Merit in JEE", "Family income < ₹8L"], deadline: "Feb 2027", benefits: ["Full tuition support", "4-year coverage"], category: "Merit" },
+  { id: "inspire", name: "INSPIRE Scheme", provider: "DST, Govt. of India", amount: "₹80,000/year", eligibility: ["Top 1% in Class 12 boards", "Science stream", "Selected institutes"], deadline: "Mar 2027", benefits: ["Research mentorship", "Summer internships"], category: "Science" },
+  { id: "loreal", name: "L'Oréal Foundation For Young Women", provider: "L'Oréal India", amount: "₹2,00,000", eligibility: ["Female students", "Science degrees", "Academic excellence"], deadline: "Apr 2027", benefits: ["One-time grant", "Mentorship network"], category: "Diversity" },
+  { id: "tata", name: "Tata Scholarship", provider: "Tata Trusts", amount: "₹1,50,000/year", eligibility: ["Class 12 passed", "Family income < ₹2.5L", "Merit + need"], deadline: "May 2027", benefits: ["Full cost coverage", "Career guidance"], category: "Need-based" },
+  { id: "cmi", name: "CM Scholarship (Tamil Nadu)", provider: "State Govt.", amount: "₹20,000/year", eligibility: ["TN students", "Class 12", "Community quota"], deadline: "Oct 2026", benefits: ["Covers fees", "Free textbook support"], category: "State" },
+  { id: "daiict", name: "DAIICT Merit Scholarship", provider: "DAIICT", amount: "₹50,000/year", eligibility: ["Admitted students", "Top 10% merit", "B.Tech programs"], deadline: "Jul 2026", benefits: ["Tuition waiver", "Dean's list honors"], category: "Merit" },
+  { id: "jain", name: "Jain University Prestige Scholarship", provider: "Jain University", amount: "₹40,000/year", eligibility: ["Admitted UG students", "90%+ in boards", "All streams"], deadline: "Aug 2026", benefits: ["Fee reduction", "Sports & cultural awards"], category: "Merit" },
+];
