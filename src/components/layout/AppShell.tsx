@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Bell,
@@ -20,6 +20,7 @@ import { DropdownMenu, DropdownItem } from "@/components/ui/dropdown-menu";
 import { ThemeToggle } from "@/components/common/ThemeToggle";
 import { Logo } from "@/components/common/Logo";
 import { Sidebar, type SidebarSection } from "@/components/layout/Sidebar";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface AppShellProps {
   sections: SidebarSection[];
@@ -35,11 +36,23 @@ function AppShell({ sections, title, subtitle, role, notificationsTo, profileTo,
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [query, setQuery] = useState("");
   const location = useLocation();
+  const navigate = useNavigate();
+  const { user, logout } = useAuth();
 
   const notificationsHref = notificationsTo ?? (role === "student" ? "/student/notifications" : "/admin/notifications");
   const profileHref = profileTo ?? (role === "student" ? "/student/profile" : "/admin/settings");
   const logoutTo = role === "student" ? "/login" : "/admin/login";
   const homeTo = role === "student" ? "/student/dashboard" : "/admin";
+  const displayName = role === "student" ? user?.fullName || "Student" : "Admin";
+  const education = role === "student"
+    ? [user?.studentClass || "Education not provided", user?.stream].filter(Boolean).join(" · ")
+    : "Administrator";
+  const initials = displayName.split(" ").map((part) => part[0]).join("").slice(0, 2).toUpperCase();
+
+  const handleLogout = () => {
+    logout();
+    navigate(logoutTo, { replace: true });
+  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -119,7 +132,7 @@ function AppShell({ sections, title, subtitle, role, notificationsTo, profileTo,
             <DropdownMenu
               trigger={
                 <button className="flex items-center gap-2 rounded-full p-0.5 transition-colors hover:bg-muted">
-                  <Avatar initials={role === "student" ? "AR" : "AD"} color="bg-gradient-to-br from-blue-600 to-indigo-600" />
+                  <Avatar initials={role === "student" ? initials : "AD"} color="bg-gradient-to-br from-blue-600 to-indigo-600" />
                   <ChevronDown className="hidden h-4 w-4 text-muted-foreground sm:block" />
                 </button>
               }
@@ -127,8 +140,8 @@ function AppShell({ sections, title, subtitle, role, notificationsTo, profileTo,
               {(close) => (
                 <>
                   <div className="border-b px-3 py-2">
-                    <p className="text-sm font-semibold">{role === "student" ? "Aarav Sharma" : "Admin"}</p>
-                    <p className="text-xs text-muted-foreground">Class 12 · State Board</p>
+                    <p className="text-sm font-semibold">{displayName}</p>
+                    <p className="text-xs text-muted-foreground">{education}</p>
                   </div>
                   <div className="pt-1">
                     <DropdownItem onClick={close}>
@@ -146,10 +159,8 @@ function AppShell({ sections, title, subtitle, role, notificationsTo, profileTo,
                         <Settings className="h-4 w-4" /> Settings
                       </Link>
                     </DropdownItem>
-                    <DropdownItem onClick={close} className="text-destructive">
-                      <Link to={logoutTo} className="flex w-full items-center gap-2">
-                        <LogOut className="h-4 w-4" /> Logout
-                      </Link>
+                    <DropdownItem onClick={() => { close(); handleLogout(); }} className="text-destructive">
+                      <LogOut className="h-4 w-4" /> Logout
                     </DropdownItem>
                   </div>
                 </>

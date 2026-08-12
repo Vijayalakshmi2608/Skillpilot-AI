@@ -108,21 +108,20 @@ class OpenRouterClient:
                 if attempt < self.max_retries:
                     self._sleep(attempt, retry_after)
                     continue
-                raise OpenRouterRateLimitError("Rate limit exceeded. Please try again later.", status_code=429, response_body=response.text)
+                raise OpenRouterRateLimitError("Rate limit exceeded. Please try again later.", status_code=429)
 
             if response.status_code >= 500:
                 logger.warning("OpenRouter server error (%d). Attempt %d/%d.", response.status_code, attempt, self.max_retries)
                 if attempt < self.max_retries:
                     self._sleep(attempt)
                     continue
-                raise OpenRouterError(f"OpenRouter server error: {response.status_code}", status_code=response.status_code, response_body=response.text)
+                raise OpenRouterError(f"OpenRouter server error: {response.status_code}", status_code=response.status_code)
 
             if not response.ok:
-                logger.error("OpenRouter API error: %d %s", response.status_code, response.text[:500])
+                logger.error("OpenRouter API error: status=%d", response.status_code)
                 raise OpenRouterError(
                     f"OpenRouter API error: {response.status_code}",
                     status_code=response.status_code,
-                    response_body=response.text,
                 )
 
             try:

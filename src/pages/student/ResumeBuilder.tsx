@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Download, FileText, Mail, MapPin, Phone } from "lucide-react";
 import { PageHeader } from "@/components/common/PageHeader";
@@ -10,16 +10,27 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { resumeTemplates } from "@/data/resumeTemplates";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/contexts/AuthContext";
 
 function ResumeBuilder() {
+  const { user } = useAuth();
   const [template, setTemplate] = useState("modern");
   const active = resumeTemplates.find((t) => t.id === template) ?? resumeTemplates[0];
-  const [name, setName] = useState("Aarav Sharma");
-  const [email, setEmail] = useState("aarav.sharma@student.in");
-  const [phone, setPhone] = useState("+91 98765 43210");
-  const [location, setLocation] = useState("Chennai, Tamil Nadu");
-  const [education, setEducation] = useState("DAV Senior Secondary School · PCM · 92% (2027)");
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [location, setLocation] = useState("");
+  const [education, setEducation] = useState("");
   const [skills, setSkills] = useState("Python, Java, HTML/CSS, Communication, Leadership");
+
+  useEffect(() => {
+    if (!user) return;
+    setName(user.fullName || "");
+    setEmail(user.email || "");
+    setPhone(user.phone || "");
+    setLocation(user.city || "");
+    setEducation([user.school, user.studentClass, user.stream, user.boardScore].filter(Boolean).join(" · "));
+  }, [user]);
   const [projects, setProjects] = useState("Smart Attendance App (Python + OpenCV)\nClass 12 Science Exhibition — State Winner");
 
   return (

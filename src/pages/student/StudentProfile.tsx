@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -12,6 +13,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { useAuth } from "@/contexts/AuthContext";
+import { api } from "@/lib/api";
 
 const schema = z.object({
   fullName: z.string().min(3, "Required"),
@@ -26,12 +29,30 @@ const schema = z.object({
 type FormData = z.infer<typeof schema>;
 
 function StudentProfile() {
-  const { register, handleSubmit, formState: { errors } } = useForm<FormData>({
+  const { user, refreshProfile } = useAuth();
+  const { register, handleSubmit, reset, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema),
-    defaultValues: { fullName: "Aarav Sharma", email: "aarav.sharma@student.in", phone: "9876543210", city: "Chennai", school: "DAV Senior Secondary School", stream: "PCM", boardScore: "92%" },
+    defaultValues: { fullName: "", email: "", phone: "", city: "", school: "", stream: "", boardScore: "" },
   });
 
-  const onSubmit = () => toast.success("Profile saved!", { description: "Your changes have been saved (UI demo)." });
+  useEffect(() => {
+    if (user) {
+      reset({ fullName: user.fullName || "", email: user.email || "", phone: user.phone || "", city: user.city || "", school: user.school || "", stream: user.stream || "", boardScore: user.boardScore || "" });
+    }
+  }, [user, reset]);
+
+  const onSubmit = async (data: FormData) => {
+    try {
+      await api.patch("/students/me", data);
+      await refreshProfile();
+      toast.success("Profile saved!", { description: "Your profile has been updated." });
+    } catch (error) {
+      toast.error("Unable to save profile", { description: error instanceof Error ? error.message : "Please try again." });
+    }
+  };
+
+  const displayName = user?.fullName || "Student";
+  const education = [user?.studentClass || "Education not provided", user?.stream].filter(Boolean).join(" · ");
 
   return (
     <div className="space-y-6">
@@ -47,23 +68,23 @@ function StudentProfile() {
         <Card className="h-fit">
           <CardHeader className="text-center">
             <div className="relative mx-auto">
-              <Avatar initials="AR" color="bg-gradient-to-br from-blue-600 to-indigo-600" size="lg" />
+              <Avatar initials={displayName.split(" ").map((part) => part[0]).join("").slice(0, 2).toUpperCase()} color="bg-gradient-to-br from-blue-600 to-indigo-600" size="lg" />
               <button className="absolute -bottom-1 -right-1 flex h-7 w-7 items-center justify-center rounded-full bg-primary text-white shadow-md" onClick={() => toast.info("Photo upload is a UI demo")}>
                 <Camera className="h-3.5 w-3.5" />
               </button>
             </div>
-            <CardTitle className="mt-3">Aarav Sharma</CardTitle>
-            <p className="text-sm text-muted-foreground">Class 12 · PCM · Chennai</p>
+            <CardTitle className="mt-3">{displayName}</CardTitle>
+            <p className="text-sm text-muted-foreground">{education}</p>
             <div className="mt-2 flex justify-center gap-2">
               <Badge variant="secondary">AI/ML aspirant</Badge>
               <Badge variant="accent">NTSE eligible</Badge>
             </div>
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
-            <p className="flex items-center gap-2 text-muted-foreground"><Mail className="h-4 w-4" /> aarav.sharma@student.in</p>
-            <p className="flex items-center gap-2 text-muted-foreground"><Phone className="h-4 w-4" /> +91 98765 43210</p>
-            <p className="flex items-center gap-2 text-muted-foreground"><MapPin className="h-4 w-4" /> Chennai, Tamil Nadu</p>
-            <p className="flex items-center gap-2 text-muted-foreground"><GraduationCap className="h-4 w-4" /> DAV Senior Secondary School</p>
+            <p className="flex items-center gap-2 text-muted-foreground"><Mail className="h-4 w-4" /> {user?.email || "Not provided"}</p>
+            <p className="flex items-center gap-2 text-muted-foreground"><Phone className="h-4 w-4" /> {user?.phone || "Not provided"}</p>
+            <p className="flex items-center gap-2 text-muted-foreground"><MapPin className="h-4 w-4" /> {user?.city || "Not provided"}</p>
+            <p className="flex items-center gap-2 text-muted-foreground"><GraduationCap className="h-4 w-4" /> {user?.school || "Not provided"}</p>
             <div className="pt-2">
               <div className="mb-1 flex justify-between text-xs">
                 <span className="text-muted-foreground">Profile completeness</span>

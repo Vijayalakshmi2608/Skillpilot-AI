@@ -8,11 +8,25 @@ BASE_DIR = Path(__file__).resolve().parent
 load_dotenv(BASE_DIR / ".env")
 
 
+def _database_uri() -> str:
+    """Resolve relative SQLite paths next to this backend, not the process CWD."""
+    configured = os.getenv("DATABASE_URL")
+    default = f"sqlite:///{(BASE_DIR / 'database.db').as_posix()}"
+    if not configured:
+        return default
+    prefix = "sqlite:///"
+    if configured.startswith(prefix):
+        path = configured[len(prefix):]
+        if path and path != ":memory:" and not Path(path).is_absolute():
+            return f"{prefix}{(BASE_DIR / path).as_posix()}"
+    return configured
+
+
 class Config:
     ENVIRONMENT = os.getenv("FLASK_ENV", "development").lower()
     SECRET_KEY = os.getenv("SECRET_KEY")
     # An absolute SQLite path keeps the required database.db inside backend/.
-    SQLALCHEMY_DATABASE_URI = os.getenv("DATABASE_URL", f"sqlite:///{(BASE_DIR / 'database.db').as_posix()}")
+    SQLALCHEMY_DATABASE_URI = _database_uri()
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY")
     JWT_ACCESS_TOKEN_EXPIRES = timedelta(hours=int(os.getenv("JWT_ACCESS_TOKEN_HOURS", "24")))
@@ -22,8 +36,9 @@ class Config:
     JSONIFY_PRETTYPRINT_REGULAR = False
     MAX_CONTENT_LENGTH = int(os.getenv("MAX_CONTENT_LENGTH", str(2 * 1024 * 1024)))
     OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-    OPENROUTER_API_URL = os.getenv("OPENROUTER_API_URL", "https://openrouter.ai/api/v1/chat/completions")
-    OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "meta-llama/llama-3.1-8b-instruct:free")
+    OPENROUTER_BASE_URL = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1").rstrip("/")
+    OPENROUTER_API_URL = os.getenv("OPENROUTER_API_URL", f"{OPENROUTER_BASE_URL}/chat/completions")
+    OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "openrouter/free")
     OPENROUTER_TIMEOUT = int(os.getenv("OPENROUTER_TIMEOUT", "60"))
     OPENROUTER_MAX_RETRIES = int(os.getenv("OPENROUTER_MAX_RETRIES", "3"))
 

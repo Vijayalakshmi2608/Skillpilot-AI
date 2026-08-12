@@ -7,6 +7,11 @@ interface User {
   email: string;
   role: string;
   phone?: string;
+  stream?: string;
+  city?: string;
+  school?: string;
+  boardScore?: string;
+  studentClass?: string;
   createdAt?: string;
 }
 
@@ -66,7 +71,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
     setToken(data.data.accessToken);
     setTokenState(data.data.accessToken);
-    setUser(data.data.user);
+    await refreshProfile();
   }
 
   async function register(payload: {
@@ -79,7 +84,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const data = await api.post<{ success: boolean; data: { accessToken: string; refreshToken: string; user: User } }>("/auth/register", payload);
     setToken(data.data.accessToken);
     setTokenState(data.data.accessToken);
-    setUser(data.data.user);
+    await refreshProfile();
   }
 
   function logout() {

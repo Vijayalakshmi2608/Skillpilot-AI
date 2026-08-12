@@ -429,7 +429,8 @@ def test_career_roadmap_invalid_json_response(client):
 
         response = client.post("/api/ai/roadmap", json=ROADMAP_PAYLOAD, headers=headers)
 
-    assert response.status_code == 500
+    assert response.status_code == 200
+    assert response.get_json()["data"]["aiEnhanced"] is False
 
 
 def test_career_roadmap_missing_api_key(client):

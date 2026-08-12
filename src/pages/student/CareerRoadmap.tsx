@@ -55,15 +55,15 @@ const emptyRoadmap: RoadmapData = {
 };
 
 function CareerRoadmap() {
-  const { isAuthenticated, isLoading: authLoading } = useAuth();
+  const { isAuthenticated, isLoading: authLoading, user } = useAuth();
   const [roadmap, setRoadmap] = useState<RoadmapData>(emptyRoadmap);
   const [loading, setLoading] = useState(false);
-  const [selectedCareer, setSelectedCareer] = useState("AI/ML Engineer");
-  const [currentSkills, setCurrentSkills] = useState("Python, Mathematics, English");
-  const [currentEducation, setCurrentEducation] = useState("Class 12");
-  const [budget, setBudget] = useState("₹10 lakhs");
-  const [location, setLocation] = useState("Bangalore");
-  const [careerGoal, setCareerGoal] = useState("Become an AI/ML Engineer");
+  const [selectedCareer, setSelectedCareer] = useState("");
+  const [currentSkills, setCurrentSkills] = useState("");
+  const [currentEducation, setCurrentEducation] = useState("");
+  const [budget, setBudget] = useState("");
+  const [location, setLocation] = useState("");
+  const [careerGoal, setCareerGoal] = useState("");
 
   const canGenerate = useMemo(() => selectedCareer && currentEducation && careerGoal, [selectedCareer, currentEducation, careerGoal]);
 
@@ -73,6 +73,13 @@ function CareerRoadmap() {
     }
   }, [authLoading, isAuthenticated]);
 
+  useEffect(() => {
+    if (!user) return;
+    setCurrentEducation((value) => value || user.studentClass || user.stream || "");
+    setCurrentSkills((value) => value || user.stream || "");
+    setLocation((value) => value || user.city || "");
+  }, [user]);
+
   const generateRoadmap = async () => {
     if (!isAuthenticated) {
       toast.error("Please log in first.");
@@ -81,7 +88,7 @@ function CareerRoadmap() {
     setLoading(true);
     try {
       const data = await api.post<{ success: boolean; data: { roadmap: RoadmapData } }>("/ai/roadmap", {
-        name: "Student",
+        name: user?.fullName || "Student",
         selectedCareer,
         currentSkills: currentSkills.split(",").map((s) => s.trim()).filter(Boolean),
         currentEducation,

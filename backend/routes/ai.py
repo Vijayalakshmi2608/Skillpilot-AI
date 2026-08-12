@@ -233,12 +233,12 @@ def career_recommendation():
     try:
         parsed = json.loads(cleaned)
     except json.JSONDecodeError:
-        logger.error("OpenRouter returned non-JSON content for user %s. Raw: %s", user.id, raw_content[:500])
+        logger.error("OpenRouter returned non-JSON content for user %s.", user.id)
         return server_error_response("AI service returned an invalid response.")
 
     structure_errors = _validate_response_structure(parsed)
     if structure_errors:
-        logger.error("OpenRouter response structure invalid for user %s: %s. Raw: %s", user.id, structure_errors, raw_content[:500])
+        logger.error("OpenRouter response structure invalid for user %s: %s.", user.id, structure_errors)
         return server_error_response("AI service returned an incompatible response structure.")
 
     return ok({"recommendations": parsed["recommendations"]}, "Career recommendations generated successfully.")
@@ -323,6 +323,52 @@ def _build_roadmap_prompt(data: Dict[str, Any]) -> str:
     )
 
 
+def _normalise_roadmap_payload(data: Dict[str, Any], user: User) -> Dict[str, Any]:
+    """Accept existing camelCase fields and documented concise aliases safely."""
+    normalised = dict(data)
+    normalised["name"] = user.full_name
+    aliases = {
+        "career": "selectedCareer",
+        "education": "currentEducation",
+        "goal": "careerGoal",
+        "skills": "currentSkills",
+    }
+    for source, target in aliases.items():
+        if target not in normalised and source in normalised:
+            normalised[target] = normalised[source]
+    return normalised
+
+
+def _fallback_roadmap(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Create a safe, career-specific roadmap when an AI provider is unavailable."""
+    career = data["selectedCareer"]
+    education = data["currentEducation"]
+    skills = data["currentSkills"]
+    location = data["location"]
+    goal = data["careerGoal"]
+    skills_text = ", ".join(skills) if skills else "your current skills"
+    return {
+        "entranceExams": [{"name": "Relevant entrance examination", "eligibility": f"Check current eligibility for {career} after {education}.", "prepTips": "Confirm the official syllabus, deadline, and admission requirements."}],
+        "degreeSelection": [{"degree": f"A recognised programme related to {career}", "reason": f"Builds the foundation needed to pursue {goal}."}],
+        "semesterWiseLearning": [{"semester": "Foundation", "focus": f"Strengthen fundamentals and build on {skills_text}."}, {"semester": "Applied learning", "focus": f"Complete practical projects relevant to {career}."}],
+        "certifications": [{"name": f"Industry-recognised {career} certification", "timeline": "After foundational learning"}],
+        "projects": [{"name": f"Portfolio project for {career}", "difficulty": "Beginner to intermediate"}],
+        "internships": [{"company": "Relevant local or remote organisation", "type": f"Internship aligned with {career}"}],
+        "hackathons": [{"name": "Domain-relevant student competition", "type": "Portfolio and networking"}],
+        "portfolio": [{"item": "Documented project case studies, skills, and achievements"}],
+        "resumePreparation": ["Tailor the resume to the selected career.", "Quantify project outcomes and learning."],
+        "placementPreparation": ["Track opportunities and eligibility deadlines.", "Practise career-specific aptitude and communication skills."],
+        "interviewPreparation": ["Prepare a concise introduction and portfolio walkthrough.", "Practise role-specific technical or subject questions."],
+        "higherStudies": [{"option": f"Specialisation related to {career}", "benefit": "Build deeper expertise after foundational study."}],
+        "estimatedTimeline": f"Start from {education}, review requirements in {location}, and progress toward {goal} through study, projects, and experience.",
+        "monthlyGoals": ["Review official eligibility and admissions information.", "Practise one core skill weekly.", "Complete a small career-relevant project.", "Update your learning plan using progress evidence."],
+        "yearlyGoals": ["Build strong academic foundations.", "Create a portfolio with relevant work.", "Apply for suitable learning, mentorship, and internship opportunities."],
+        "freeResources": ["Official entrance-exam websites", "Open educational resources", "Library and school career guidance resources"],
+        "paidResources": ["Accredited courses only after comparing syllabus, cost, and outcomes"],
+        "tips": ["Verify every exam and course deadline on its official website.", "Choose projects that demonstrate the skills required for the selected career.", "Review this roadmap as your interests and results evolve."],
+    }
+
+
 def _validate_roadmap_structure(data: Any) -> List[str]:
     required_keys = {
         "entranceExams", "degreeSelection", "semesterWiseLearning", "certifications",
@@ -343,6 +389,17 @@ def _validate_roadmap_structure(data: Any) -> List[str]:
     return []
 
 
+def _complete_roadmap(ai_response: Any, fallback: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Merge a valid partial AI roadmap into the UI's complete roadmap shape."""
+    if not isinstance(ai_response, dict) or not isinstance(ai_response.get("roadmap"), dict):
+        return None
+    roadmap = dict(fallback)
+    for key, value in ai_response["roadmap"].items():
+        if key in roadmap and isinstance(value, type(roadmap[key])):
+            roadmap[key] = value
+    return roadmap
+
+
 @ai_bp.post("/roadmap")
 @jwt_required()
 def career_roadmap():
@@ -353,13 +410,15 @@ def career_roadmap():
     data, error = json_body()
     if error:
         return error
+    data = _normalise_roadmap_payload(data, user)
 
     validation_errors = _validate_roadmap_payload(data)
     if validation_errors:
         return error_response("Validation failed.", 422, validation_errors)
 
+    fallback = _fallback_roadmap(data)
     if not Config.OPENROUTER_API_KEY:
-        logger.error("OpenRouter API key is not configured.")
+        logger.warning("OpenRouter is not configured for user %s.", user.id)
         return server_error_response("AI service is not configured.")
 
     prompt = _build_roadmap_prompt(data)
@@ -373,10 +432,10 @@ def career_roadmap():
             api_key=Config.OPENROUTER_API_KEY,
             api_url=Config.OPENROUTER_API_URL,
             model=Config.OPENROUTER_MODEL,
-            timeout=Config.OPENROUTER_TIMEOUT,
-            max_retries=Config.OPENROUTER_MAX_RETRIES,
+            timeout=min(Config.OPENROUTER_TIMEOUT, 30),
+            max_retries=1,
         )
-        result = client.chat_completion(messages=messages, temperature=0.7, max_tokens=4096)
+        result = client.chat_completion(messages=messages, temperature=0.5, max_tokens=2048)
         raw_content = result["content"]
     except OpenRouterRateLimitError as exc:
         logger.warning("OpenRouter rate limit hit for user %s: %s", user.id, exc)
@@ -386,24 +445,28 @@ def career_roadmap():
         return error_response("AI service timed out. Please try again later.", 504)
     except OpenRouterError as exc:
         logger.error("OpenRouter error for user %s: %s", user.id, exc)
-        return server_error_response("AI service is currently unavailable.")
-    except Exception as exc:
+        # The free router can complete a request with an empty final content
+        # field (for example after consuming its budget on reasoning).  The
+        # student's selected career remains sufficient to return a useful,
+        # complete roadmap rather than surfacing a gateway failure.
+        return ok({"roadmap": fallback, "aiEnhanced": False}, "Roadmap generated from your selected career while AI response is unavailable.")
+    except Exception:
         logger.exception("Unexpected error calling OpenRouter for user %s.", user.id)
-        return server_error_response("AI service is currently unavailable.")
+        return server_error_response("Unable to generate roadmap.")
 
     cleaned = _sanitize_json_string(raw_content)
     try:
         parsed = json.loads(cleaned)
     except json.JSONDecodeError:
-        logger.error("OpenRouter returned non-JSON content for user %s. Raw: %s", user.id, raw_content[:500])
-        return server_error_response("AI service returned an invalid response.")
+        logger.error("OpenRouter returned non-JSON content for user %s.", user.id)
+        return ok({"roadmap": fallback, "aiEnhanced": False}, "Roadmap generated from your selected career while AI formatting is unavailable.")
 
-    structure_errors = _validate_roadmap_structure(parsed)
-    if structure_errors:
-        logger.error("OpenRouter response structure invalid for user %s: %s. Raw: %s", user.id, structure_errors, raw_content[:500])
-        return server_error_response("AI service returned an incompatible response structure.")
+    roadmap = _complete_roadmap(parsed, fallback)
+    if roadmap is None:
+        logger.error("OpenRouter response structure invalid for user %s.", user.id)
+        return ok({"roadmap": fallback, "aiEnhanced": False}, "Roadmap generated from your selected career while AI formatting is unavailable.")
 
-    return ok({"roadmap": parsed["roadmap"]}, "Career roadmap generated successfully.")
+    return ok({"roadmap": roadmap, "aiEnhanced": True}, "Career roadmap generated successfully.")
 
 
 # ---------------------------------------------------------------------------
@@ -557,12 +620,12 @@ def skill_gap_analyzer():
     try:
         parsed = json.loads(cleaned)
     except json.JSONDecodeError:
-        logger.error("OpenRouter returned non-JSON content for user %s. Raw: %s", user.id, raw_content[:500])
+        logger.error("OpenRouter returned non-JSON content for user %s.", user.id)
         return server_error_response("AI service returned an invalid response.")
 
     structure_errors = _validate_skill_gap_structure(parsed)
     if structure_errors:
-        logger.error("OpenRouter response structure invalid for user %s: %s. Raw: %s", user.id, structure_errors, raw_content[:500])
+        logger.error("OpenRouter response structure invalid for user %s: %s.", user.id, structure_errors)
         return server_error_response("AI service returned an incompatible response structure.")
 
     return ok({"skillGapAnalysis": parsed["skillGapAnalysis"]}, "Skill gap analysis generated successfully.")
@@ -694,12 +757,12 @@ def career_chat():
     try:
         parsed = json.loads(cleaned)
     except json.JSONDecodeError:
-        logger.error("OpenRouter returned non-JSON content for user %s. Raw: %s", user.id, raw_content[:500])
+        logger.error("OpenRouter returned non-JSON content for user %s.", user.id)
         return server_error_response("AI service returned an invalid response.")
 
     structure_errors = _validate_chat_structure(parsed)
     if structure_errors:
-        logger.error("OpenRouter response structure invalid for user %s: %s. Raw: %s", user.id, structure_errors, raw_content[:500])
+        logger.error("OpenRouter response structure invalid for user %s: %s.", user.id, structure_errors)
         return server_error_response("AI service returned an incompatible response structure.")
 
     return ok(parsed, "Chat response generated successfully.")
@@ -864,12 +927,12 @@ def resume_analyzer():
     try:
         parsed = json.loads(cleaned)
     except json.JSONDecodeError:
-        logger.error("OpenRouter returned non-JSON content for user %s. Raw: %s", user.id, raw_content[:500])
+        logger.error("OpenRouter returned non-JSON content for user %s.", user.id)
         return server_error_response("AI service returned an invalid response.")
 
     structure_errors = _validate_resume_structure(parsed)
     if structure_errors:
-        logger.error("OpenRouter response structure invalid for user %s: %s. Raw: %s", user.id, structure_errors, raw_content[:500])
+        logger.error("OpenRouter response structure invalid for user %s: %s.", user.id, structure_errors)
         return server_error_response("AI service returned an incompatible response structure.")
 
     return ok({"resumeAnalysis": parsed["resumeAnalysis"]}, "Resume analysis generated successfully.")

@@ -21,6 +21,7 @@ import {
   Settings,
 } from "lucide-react";
 import type { SidebarSection } from "@/components/layout/Sidebar";
+import { useAuth } from "@/contexts/AuthContext";
 
 const sections: SidebarSection[] = [
   {
@@ -70,11 +71,14 @@ const sections: SidebarSection[] = [
 ];
 
 function StudentLayout() {
+  const { user } = useAuth();
+  const education = [user?.studentClass || "Education not provided", user?.stream].filter(Boolean).join(" · ");
+
   return (
     <AppShell
       sections={sections}
       title="Student Dashboard"
-      subtitle="Aarav Sharma · Class 12"
+      subtitle={`${user?.fullName || "Student"} · ${education}`}
       role="student"
     >
       <Outlet />
