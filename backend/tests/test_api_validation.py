@@ -98,9 +98,52 @@ def test_authentication_lifecycle_and_removed_auth_routes(client):
     assert client.post("/api/auth/forgot-password", json={"email": "student@example.test"}).status_code == 202
     assert client.post("/api/auth/reset-password", json={"password": "AnotherSecure123!"}, headers=_authorization(access)).status_code == 200
     assert client.post("/api/auth/logout", headers=_authorization(access)).status_code == 200
+    assert client.get("/api/auth/me", headers=_authorization(access)).status_code == 401
     # Parent/admin authentication was intentionally removed from the current contract.
     assert client.post("/api/auth/parents/register", json={}).status_code == 404
     assert client.post("/api/auth/admin/login", json={}).status_code == 404
+
+
+def test_auth_input_validation_and_profile_ownership(client):
+    assert client.post("/api/auth/register", json={"fullName": "A", "email": "bad", "password": "short"}).status_code == 400
+    first = _register(client, "first@example.test")
+    second = _register(client, "second@example.test")
+    first_headers = _authorization(first["accessToken"])
+    second_headers = _authorization(second["accessToken"])
+
+    assert client.get("/api/students/me").status_code == 401
+    assert client.get("/api/students/me", headers=first_headers).status_code == 200
+    assert client.patch("/api/students/me", headers=first_headers, json={"fullName": 12}).status_code == 400
+    assert client.patch("/api/students/me", headers=first_headers, json={"password_hash": "exposed"}).status_code == 400
+    updated = client.patch("/api/students/me", headers=first_headers, json={
+        "fullName": "Updated Student", "email": "FIRST@example.test", "city": "Pune",
+        "schoolName": "Central School", "familyIncome": 120000,
+    })
+    assert updated.status_code == 200, updated.get_json()
+    assert updated.get_json()["data"]["fullName"] == "Updated Student"
+    assert updated.get_json()["data"]["profile"]["familyIncome"] == 120000
+    assert client.get("/api/students/me", headers=second_headers).get_json()["data"]["fullName"] == "Test Student"
+    assert client.patch("/api/students/me", headers=first_headers, json={"email": "second@example.test"}).status_code == 409
+
+
+def test_profile_update_persists_across_app_restart(tmp_path):
+    database_path = tmp_path / "auth-persistence.db"
+
+    class FileConfig(TestConfig):
+        SQLALCHEMY_DATABASE_URI = f"sqlite:///{database_path.as_posix()}"
+
+    first_app = create_app(FileConfig)
+    first_client = first_app.test_client()
+    account = _register(first_client, "persistent@example.test")
+    headers = _authorization(account["accessToken"])
+    saved = first_client.patch("/api/students/me", headers=headers, json={"city": "Jaipur", "schoolName": "North School"})
+    assert saved.status_code == 200
+
+    second_app = create_app(FileConfig)
+    reloaded = second_app.test_client().get("/api/students/me", headers=headers)
+    assert reloaded.status_code == 200
+    assert reloaded.get_json()["data"]["city"] == "Jaipur"
+    assert reloaded.get_json()["data"]["profile"]["schoolName"] == "North School"
 
 
 def test_career_college_and_scholarship_apis(client, app):

@@ -15,7 +15,7 @@ import { useAuth } from "@/contexts/AuthContext";
 const schema = z.object({
   fullName: z.string().min(3, "Enter your full name"),
   email: z.string().email("Enter a valid email"),
-  password: z.string().min(6, "Password must be at least 6 characters"),
+  password: z.string().min(8, "Password must be at least 8 characters"),
   stream: z.string().min(1, "Select your stream"),
   city: z.string().min(2, "Enter your city"),
 });

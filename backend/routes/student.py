@@ -7,6 +7,7 @@ from models import Career, CareerRoadmap, Notification, SavedCareer, StudentProf
 from routes import ok, json_body
 from utils.decorators import roles_required
 from utils.responses import error_response
+from utils.validators import validate_email, validate_string
 
 
 student_bp = Blueprint("student", __name__, url_prefix="/api/students")
@@ -46,30 +47,58 @@ def profile():
         data, error = json_body()
         if error:
             return error
+        if not data:
+            return error_response("At least one profile field is required.", 400)
         user_fields = {
             "fullName": "full_name", "phone": "phone", "city": "city",
             "school": "school", "stream": "stream", "boardScore": "board_score",
-            "domain": "domain",
+            "domain": "domain", "email": "email",
         }
+        profile_fields = {
+            "schoolName": ("school_name", 180), "district": ("district", 100), "state": ("state", 100),
+            "class": ("student_class", 30), "board": ("board", 80), "gender": ("gender", 30), "category": ("category", 80),
+        }
+        allowed_fields = set(user_fields) | set(profile_fields) | {"familyIncome"}
+        unknown = set(data) - allowed_fields
+        if unknown:
+            return error_response("Unknown profile field.", 400, {key: "This field is not editable." for key in sorted(unknown)})
         for source, target in user_fields.items():
             if source in data:
-                if not isinstance(data[source], str):
-                    return error_response(f"{source} must be a string.", 400)
-                setattr(user, target, data[source].strip())
-        profile_fields = {
-            "schoolName": "school_name", "district": "district", "state": "state",
-            "class": "student_class", "board": "board", "gender": "gender", "category": "category",
-        }
+                value = data[source]
+                if source == "email":
+                    if validate_email(value):
+                        return error_response("Validation failed.", 400, {source: "Enter a valid email address."})
+                    value = value.strip().lower()
+                    if User.query.filter(User.email == value, User.id != user.id).first():
+                        return error_response("Email is already registered.", 409, {source: "Email is already registered."})
+                else:
+                    message = validate_string(value, source, 0 if source == "phone" else 1,
+                                              30 if source == "phone" else {"fullName": 120, "city": 100, "school": 150, "stream": 50, "boardScore": 20, "domain": 100}[source])
+                    if message:
+                        return error_response("Validation failed.", 400, {source: message})
+                    value = value.strip() or None
+                setattr(user, target, value)
         profile_data = {source: data[source] for source in profile_fields if source in data}
         if profile_data:
-            if any(not isinstance(value, str) for value in profile_data.values()):
-                return error_response("Profile fields must be strings.", 400)
             profile = user.student_profile
             if profile is None:
-                profile = StudentProfile(user_id=user.id)
+                profile = StudentProfile(user=user)
                 db.session.add(profile)
             for source, value in profile_data.items():
-                setattr(profile, profile_fields[source], value.strip())
+                target, maximum = profile_fields[source]
+                message = validate_string(value, source, 0, maximum)
+                if message:
+                    return error_response("Validation failed.", 400, {source: message})
+                setattr(profile, target, value.strip() or None)
+        if "familyIncome" in data:
+            value = data["familyIncome"]
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0 or value > 999999999999:
+                return error_response("Validation failed.", 400, {"familyIncome": "Must be a non-negative number."})
+            profile = user.student_profile
+            if profile is None:
+                profile = StudentProfile(user=user)
+                db.session.add(profile)
+            profile.family_income = value
         try:
             db.session.commit()
         except SQLAlchemyError:

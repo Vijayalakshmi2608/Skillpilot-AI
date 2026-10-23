@@ -10,7 +10,7 @@ from sqlalchemy import event, text
 from sqlalchemy.engine import Engine
 from werkzeug.exceptions import HTTPException
 from config import Config
-from models import db, Admin
+from models import db, Admin, RevokedToken
 from utils.auth import hash_password
 from routes import (auth_bp, content_bp, student_bp, admin_bp, public_bp, career_bp,
                     college_bp, scholarship_bp, assessment_bp, recommendation_bp,
@@ -31,6 +31,10 @@ def create_app(config_class=Config):
     CORS(app, resources={r"/api/*": {"origins": app.config["CORS_ORIGINS"]}}, supports_credentials=False)
     db.init_app(app)
     jwt = JWTManager(app)
+
+    @jwt.token_in_blocklist_loader
+    def is_revoked(_header, payload):
+        return db.session.get(RevokedToken, payload["jti"]) is not None
 
     @app.before_request
     def start_request_timer():

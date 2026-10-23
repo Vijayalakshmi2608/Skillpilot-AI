@@ -19,6 +19,8 @@ def validate_email(value: Any) -> Optional[str]:
 def validate_password(value: Any, minimum_length: int = 8) -> Optional[str]:
     if not isinstance(value, str) or len(value) < minimum_length:
         return f"Password must be at least {minimum_length} characters."
+    if len(value.encode("utf-8")) > 72:
+        return "Password must not exceed 72 UTF-8 bytes."
     return None
 
 

@@ -32,3 +32,4 @@ from models.career_roadmap import CareerRoadmap  # noqa: E402,F401
 from models.feedback import Feedback  # noqa: E402,F401
 from models.saved_career import SavedCareer  # noqa: E402,F401
 from models.admin_log import AdminLog  # noqa: E402,F401
+from models.revoked_token import RevokedToken  # noqa: E402,F401

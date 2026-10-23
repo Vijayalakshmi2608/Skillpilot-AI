@@ -1,8 +1,9 @@
 """JWT authentication endpoints backed exclusively by the User model."""
 from flask import Blueprint
+from datetime import datetime, timezone
 from flask_jwt_extended import create_access_token, create_refresh_token, get_jwt, get_jwt_identity, jwt_required
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
-from models import db, StudentProfile, User
+from models import db, RevokedToken, StudentProfile, User
 from routes import ok, json_body
 from utils.responses import error_response, not_found_response
 from utils.validators import validate_email, validate_password, validate_string
@@ -36,6 +37,11 @@ def validate_registration(data):
     if message := validate_string(data.get("fullName"), "Full name", 2, 120): errors["fullName"] = message
     if message := validate_email(data.get("email")): errors["email"] = message
     if message := validate_password(data.get("password")): errors["password"] = message
+    for field, maximum in (("phone", 30), ("stream", 50), ("city", 100), ("school", 150)):
+        if field in data and data[field] is not None and (message := validate_string(data[field], field, 0, maximum)):
+            errors[field] = message
+    if "phone" in data and data["phone"] and isinstance(data["phone"], str) and not all(char.isdigit() or char in "+-() " for char in data["phone"]):
+        errors["phone"] = "Enter a valid phone number."
     return errors
 
 
@@ -130,5 +136,12 @@ def reset_password():
 @auth_bp.post("/logout")
 @jwt_required()
 def logout():
-    # JWTs are stateless; clients must discard access and refresh tokens at logout.
+    claims = get_jwt()
+    try:
+        db.session.add(RevokedToken(jti=claims["jti"], token_type=claims.get("type", "access"),
+                                    expires_at=datetime.fromtimestamp(claims["exp"], timezone.utc) if claims.get("exp") else None))
+        db.session.commit()
+    except SQLAlchemyError:
+        db.session.rollback()
+        return error_response("Unable to log out securely. Please try again.", 500)
     return ok(message="Logged out successfully.")

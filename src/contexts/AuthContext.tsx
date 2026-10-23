@@ -88,6 +88,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   function logout() {
+    if (getToken()) {
+      void api.post("/auth/logout", {}).catch(() => undefined);
+    }
     setToken(null);
     setTokenState(null);
     setUser(null);
