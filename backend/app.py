@@ -26,7 +26,10 @@ def create_app(config_class=Config):
     # Local development values come from backend/.env; production rejects
     # placeholder values in Config.validate_security before this point.
     if not app.config.get("SECRET_KEY") or not app.config.get("JWT_SECRET_KEY"):
-        raise RuntimeError("SECRET_KEY and JWT_SECRET_KEY must be configured in backend/.env.")
+        raise RuntimeError(
+            "SECRET_KEY and JWT_SECRET_KEY must be configured as environment "
+            "variables or in backend/.env."
+        )
 
     CORS(app, resources={r"/api/*": {"origins": app.config["CORS_ORIGINS"]}}, supports_credentials=False)
     db.init_app(app)
@@ -166,4 +169,9 @@ def enable_sqlite_foreign_keys(connection, _):
 app = create_app()
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", "5000")), debug=os.getenv("FLASK_ENV") == "development")
+    if Config.ENVIRONMENT == "production":
+        raise RuntimeError(
+            "Do not use Flask's development server in production. "
+            "Start the WSGI app with: waitress-serve --listen=0.0.0.0:5000 wsgi:app"
+        )
+    app.run(host="0.0.0.0", port=int(os.getenv("PORT", "5000")), debug=Config.ENVIRONMENT == "development")

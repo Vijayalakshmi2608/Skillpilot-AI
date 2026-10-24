@@ -11,6 +11,7 @@ from flask_jwt_extended import create_access_token
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app import create_app
+from config import Config
 from models import (
     AssessmentOption,
     AssessmentQuestion,
@@ -41,6 +42,50 @@ class TestConfig:
     @classmethod
     def validate_security(cls):
         return None
+
+
+class ProductionConfig(Config):
+    ENVIRONMENT = "production"
+    SECRET_KEY = "a" * 40
+    JWT_SECRET_KEY = "b" * 40
+    CORS_ORIGINS = ["https://frontend.example.test"]
+    CORS_ORIGINS_CONFIGURED = True
+
+
+def test_production_config_accepts_distinct_secrets_and_exact_origin():
+    ProductionConfig.validate_security()
+
+
+def test_production_config_rejects_identical_secrets():
+    class InvalidSecretsConfig(ProductionConfig):
+        JWT_SECRET_KEY = ProductionConfig.SECRET_KEY
+
+    with pytest.raises(RuntimeError, match="distinct SECRET_KEY and JWT_SECRET_KEY"):
+        InvalidSecretsConfig.validate_security()
+
+
+def test_production_config_rejects_wildcard_cors():
+    class WildcardCorsConfig(ProductionConfig):
+        CORS_ORIGINS = ["https://*.example.test"]
+
+    with pytest.raises(RuntimeError, match="wildcard origins are not allowed"):
+        WildcardCorsConfig.validate_security()
+
+
+def test_production_config_requires_explicit_cors_origins():
+    class MissingCorsConfig(ProductionConfig):
+        CORS_ORIGINS_CONFIGURED = False
+
+    with pytest.raises(RuntimeError, match="must be explicitly set"):
+        MissingCorsConfig.validate_security()
+
+
+def test_production_config_rejects_cors_paths():
+    class CorsPathConfig(ProductionConfig):
+        CORS_ORIGINS = ["https://frontend.example.test/path"]
+
+    with pytest.raises(RuntimeError, match="without a path"):
+        CorsPathConfig.validate_security()
 
 
 @pytest.fixture()

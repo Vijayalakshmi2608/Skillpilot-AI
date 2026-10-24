@@ -20,7 +20,6 @@ def _ensure_sys_path():
 _ensure_sys_path()
 
 from app import create_app  # noqa: E402
-from config import Config  # noqa: E402
 from models import User, db  # noqa: E402
 
 
@@ -277,19 +276,15 @@ def test_career_recommendation_invalid_json_response(client):
     assert body["success"] is False
 
 
-def test_career_recommendation_missing_api_key(client):
+def test_career_recommendation_missing_api_key(client, monkeypatch):
     token = _register_and_login(client)
     headers = _auth_headers(token)
 
-    original_key = Config.OPENROUTER_API_KEY
-    try:
-        Config.OPENROUTER_API_KEY = None
-        response = client.post("/api/ai/career-recommendation", json=VALID_PAYLOAD, headers=headers)
-        assert response.status_code == 500
-        body = response.get_json()
-        assert body["success"] is False
-    finally:
-        Config.OPENROUTER_API_KEY = original_key
+    monkeypatch.setitem(client.application.config, "OPENROUTER_API_KEY", None)
+    response = client.post("/api/ai/career-recommendation", json=VALID_PAYLOAD, headers=headers)
+    assert response.status_code == 500
+    body = response.get_json()
+    assert body["success"] is False
 
 
 def test_career_recommendation_strips_markdown_code_fences(client):
@@ -433,17 +428,13 @@ def test_career_roadmap_invalid_json_response(client):
     assert response.get_json()["data"]["aiEnhanced"] is False
 
 
-def test_career_roadmap_missing_api_key(client):
+def test_career_roadmap_missing_api_key(client, monkeypatch):
     token = _register_and_login(client)
     headers = _auth_headers(token)
 
-    original_key = Config.OPENROUTER_API_KEY
-    try:
-        Config.OPENROUTER_API_KEY = None
-        response = client.post("/api/ai/roadmap", json=ROADMAP_PAYLOAD, headers=headers)
-        assert response.status_code == 500
-    finally:
-        Config.OPENROUTER_API_KEY = original_key
+    monkeypatch.setitem(client.application.config, "OPENROUTER_API_KEY", None)
+    response = client.post("/api/ai/roadmap", json=ROADMAP_PAYLOAD, headers=headers)
+    assert response.status_code == 500
 
 
 def test_career_roadmap_strips_markdown_code_fences(client):
@@ -585,17 +576,13 @@ def test_skill_gap_invalid_json_response(client):
     assert response.status_code == 500
 
 
-def test_skill_gap_missing_api_key(client):
+def test_skill_gap_missing_api_key(client, monkeypatch):
     token = _register_and_login(client)
     headers = _auth_headers(token)
 
-    original_key = Config.OPENROUTER_API_KEY
-    try:
-        Config.OPENROUTER_API_KEY = None
-        response = client.post("/api/ai/skill-gap", json=SKILL_GAP_PAYLOAD, headers=headers)
-        assert response.status_code == 500
-    finally:
-        Config.OPENROUTER_API_KEY = original_key
+    monkeypatch.setitem(client.application.config, "OPENROUTER_API_KEY", None)
+    response = client.post("/api/ai/skill-gap", json=SKILL_GAP_PAYLOAD, headers=headers)
+    assert response.status_code == 500
 
 
 def test_skill_gap_strips_markdown_code_fences(client):
@@ -722,17 +709,13 @@ def test_career_chat_invalid_json_response(client):
     assert response.status_code == 500
 
 
-def test_career_chat_missing_api_key(client):
+def test_career_chat_missing_api_key(client, monkeypatch):
     token = _register_and_login(client)
     headers = _auth_headers(token)
 
-    original_key = Config.OPENROUTER_API_KEY
-    try:
-        Config.OPENROUTER_API_KEY = None
-        response = client.post("/api/ai/chat", json=CHAT_PAYLOAD, headers=headers)
-        assert response.status_code == 500
-    finally:
-        Config.OPENROUTER_API_KEY = original_key
+    monkeypatch.setitem(client.application.config, "OPENROUTER_API_KEY", None)
+    response = client.post("/api/ai/chat", json=CHAT_PAYLOAD, headers=headers)
+    assert response.status_code == 500
 
 
 def test_career_chat_strips_markdown_code_fences(client):
@@ -869,17 +852,13 @@ def test_resume_analyzer_invalid_json_response(client):
     assert response.status_code == 500
 
 
-def test_resume_analyzer_missing_api_key(client):
+def test_resume_analyzer_missing_api_key(client, monkeypatch):
     token = _register_and_login(client)
     headers = _auth_headers(token)
 
-    original_key = Config.OPENROUTER_API_KEY
-    try:
-        Config.OPENROUTER_API_KEY = None
-        response = client.post("/api/ai/resume-analyzer", json=RESUME_PAYLOAD, headers=headers)
-        assert response.status_code == 500
-    finally:
-        Config.OPENROUTER_API_KEY = original_key
+    monkeypatch.setitem(client.application.config, "OPENROUTER_API_KEY", None)
+    response = client.post("/api/ai/resume-analyzer", json=RESUME_PAYLOAD, headers=headers)
+    assert response.status_code == 500
 
 
 def test_resume_analyzer_strips_markdown_code_fences(client):

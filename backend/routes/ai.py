@@ -4,11 +4,10 @@ import logging
 import re
 from typing import Any, Dict, List, Optional
 
-from flask import Blueprint, request
+from flask import Blueprint, current_app, request
 from flask_jwt_extended import get_jwt, get_jwt_identity, jwt_required
 from sqlalchemy.exc import SQLAlchemyError
 
-from config import Config
 from models import StudentProfile, User, db
 from routes import ok, json_body
 from utils.openrouter import OpenRouterClient, OpenRouterError, OpenRouterRateLimitError, OpenRouterTimeoutError
@@ -18,6 +17,19 @@ from utils.validators import validate_string, validate_integer
 ai_bp = Blueprint("ai", __name__, url_prefix="/api/ai")
 
 logger = logging.getLogger(__name__)
+
+
+def _openrouter_client(timeout: Optional[int] = None, max_retries: Optional[int] = None) -> OpenRouterClient:
+    """Build the provider client from the active Flask application's settings."""
+    config = current_app.config
+    return OpenRouterClient(
+        api_key=config.get("OPENROUTER_API_KEY"),
+        api_url=config["OPENROUTER_API_URL"],
+        model=config["OPENROUTER_MODEL"],
+        timeout=timeout if timeout is not None else config["OPENROUTER_TIMEOUT"],
+        max_retries=max_retries if max_retries is not None else config["OPENROUTER_MAX_RETRIES"],
+    )
+
 
 SYSTEM_PROMPT = """\
 You are a Senior Career Guidance Expert with deep experience in career counselling, \
@@ -196,7 +208,7 @@ def career_recommendation():
     if validation_errors:
         return error_response("Validation failed.", 422, validation_errors)
 
-    if not Config.OPENROUTER_API_KEY:
+    if not current_app.config.get("OPENROUTER_API_KEY"):
         logger.error("OpenRouter API key is not configured.")
         return server_error_response("AI service is not configured.")
 
@@ -207,13 +219,7 @@ def career_recommendation():
     ]
 
     try:
-        client = OpenRouterClient(
-            api_key=Config.OPENROUTER_API_KEY,
-            api_url=Config.OPENROUTER_API_URL,
-            model=Config.OPENROUTER_MODEL,
-            timeout=Config.OPENROUTER_TIMEOUT,
-            max_retries=Config.OPENROUTER_MAX_RETRIES,
-        )
+        client = _openrouter_client()
         result = client.chat_completion(messages=messages, temperature=0.7, max_tokens=4096)
         raw_content = result["content"]
     except OpenRouterRateLimitError as exc:
@@ -417,7 +423,7 @@ def career_roadmap():
         return error_response("Validation failed.", 422, validation_errors)
 
     fallback = _fallback_roadmap(data)
-    if not Config.OPENROUTER_API_KEY:
+    if not current_app.config.get("OPENROUTER_API_KEY"):
         logger.warning("OpenRouter is not configured for user %s.", user.id)
         return server_error_response("AI service is not configured.")
 
@@ -428,11 +434,8 @@ def career_roadmap():
     ]
 
     try:
-        client = OpenRouterClient(
-            api_key=Config.OPENROUTER_API_KEY,
-            api_url=Config.OPENROUTER_API_URL,
-            model=Config.OPENROUTER_MODEL,
-            timeout=min(Config.OPENROUTER_TIMEOUT, 30),
+        client = _openrouter_client(
+            timeout=min(current_app.config["OPENROUTER_TIMEOUT"], 30),
             max_retries=1,
         )
         result = client.chat_completion(messages=messages, temperature=0.5, max_tokens=2048)
@@ -583,7 +586,7 @@ def skill_gap_analyzer():
     if validation_errors:
         return error_response("Validation failed.", 422, validation_errors)
 
-    if not Config.OPENROUTER_API_KEY:
+    if not current_app.config.get("OPENROUTER_API_KEY"):
         logger.error("OpenRouter API key is not configured.")
         return server_error_response("AI service is not configured.")
 
@@ -594,13 +597,7 @@ def skill_gap_analyzer():
     ]
 
     try:
-        client = OpenRouterClient(
-            api_key=Config.OPENROUTER_API_KEY,
-            api_url=Config.OPENROUTER_API_URL,
-            model=Config.OPENROUTER_MODEL,
-            timeout=Config.OPENROUTER_TIMEOUT,
-            max_retries=Config.OPENROUTER_MAX_RETRIES,
-        )
+        client = _openrouter_client()
         result = client.chat_completion(messages=messages, temperature=0.7, max_tokens=4096)
         raw_content = result["content"]
     except OpenRouterRateLimitError as exc:
@@ -720,7 +717,7 @@ def career_chat():
     if validation_errors:
         return error_response("Validation failed.", 422, validation_errors)
 
-    if not Config.OPENROUTER_API_KEY:
+    if not current_app.config.get("OPENROUTER_API_KEY"):
         logger.error("OpenRouter API key is not configured.")
         return server_error_response("AI service is not configured.")
 
@@ -731,13 +728,7 @@ def career_chat():
     ]
 
     try:
-        client = OpenRouterClient(
-            api_key=Config.OPENROUTER_API_KEY,
-            api_url=Config.OPENROUTER_API_URL,
-            model=Config.OPENROUTER_MODEL,
-            timeout=Config.OPENROUTER_TIMEOUT,
-            max_retries=Config.OPENROUTER_MAX_RETRIES,
-        )
+        client = _openrouter_client()
         result = client.chat_completion(messages=messages, temperature=0.8, max_tokens=2048)
         raw_content = result["content"]
     except OpenRouterRateLimitError as exc:
@@ -890,7 +881,7 @@ def resume_analyzer():
     if validation_errors:
         return error_response("Validation failed.", 422, validation_errors)
 
-    if not Config.OPENROUTER_API_KEY:
+    if not current_app.config.get("OPENROUTER_API_KEY"):
         logger.error("OpenRouter API key is not configured.")
         return server_error_response("AI service is not configured.")
 
@@ -901,13 +892,7 @@ def resume_analyzer():
     ]
 
     try:
-        client = OpenRouterClient(
-            api_key=Config.OPENROUTER_API_KEY,
-            api_url=Config.OPENROUTER_API_URL,
-            model=Config.OPENROUTER_MODEL,
-            timeout=Config.OPENROUTER_TIMEOUT,
-            max_retries=Config.OPENROUTER_MAX_RETRIES,
-        )
+        client = _openrouter_client()
         result = client.chat_completion(messages=messages, temperature=0.7, max_tokens=4096)
         raw_content = result["content"]
     except OpenRouterRateLimitError as exc:

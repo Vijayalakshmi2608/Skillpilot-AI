@@ -71,10 +71,13 @@ Invoke-RestMethod http://127.0.0.1:5000/api/careers -Headers @{ Authorization = 
 
 ## Production notes
 
-- Set `FLASK_ENV=production` and use a production WSGI server such as Waitress or Gunicorn.
-- Keep `.env`, SQLite backups, and secrets outside source control.
-- Restrict `CORS_ORIGINS` to deployed frontend origins.
-- Use managed backups and a migration process before schema changes. Flask-Migrate is included for projects that adopt Alembic migrations.
+Use the production-capable WSGI entry point from this directory:
+
+```sh
+waitress-serve --listen=0.0.0.0:${PORT:-5000} wsgi:app
+```
+
+Set `FLASK_ENV=production`, two distinct random signing secrets (at least 32 characters), and exact frontend origins in `CORS_ORIGINS`. Configure `DATABASE_URL` to a persistent writable SQLite volume, back up data before upgrades, and do not run `seed.py` against production data. SQLite local files are not shared across instances, and `db.create_all()` does not migrate existing schemas. See the project README for all variables, deployment guidance, limitations, and smoke-test steps.
 
 ## Troubleshooting
 

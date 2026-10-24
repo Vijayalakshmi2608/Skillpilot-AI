@@ -13,5 +13,11 @@ export default defineConfig({
     host: "0.0.0.0",
     port: Number(process.env.PORT) || 5173,
     hmr: false,
+    proxy: {
+      "/api": {
+        target: "http://127.0.0.1:5000",
+        changeOrigin: true,
+      },
+    },
   },
 });
