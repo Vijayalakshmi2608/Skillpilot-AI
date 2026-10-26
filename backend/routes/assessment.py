@@ -55,14 +55,36 @@ def normalize_answers(raw_answers):
 def score_answers(answers):
     scores = defaultdict(float)
     stored = []
+    domain_aliases = {
+        "technology": "it",
+        "health": "medical",
+        "business": "entrepreneurship",
+        "humanities": "journalism",
+        "research": "data-science",
+        "field": "agriculture",
+        "data": "data-science",
+        "communication": "education",
+        "public_service": "civil-services",
+        "leadership": "entrepreneurship",
+        "technical": "engineering",
+        "security": "cyber-security",
+        "sustainability": "renewable-energy",
+    }
     for question_id, option_id in answers:
         question = db.session.get(AssessmentQuestion, question_id)
         option = db.session.get(AssessmentOption, option_id)
         if not question or not option or option.question_id != question.id:
             return None, None, "One or more answers reference an invalid question or option."
-        try: weight = float(option.value) if option.value is not None else 1.0
-        except ValueError: weight = 1.0
-        if question.category: scores[question.category.lower()] += weight
+        try:
+            weight = float(option.value) if option.value is not None else 1.0
+            score_key = question.category
+        except ValueError:
+            weight = 1.0
+            score_key = option.value.strip().lower() if isinstance(option.value, str) and option.value.strip() else question.category
+            if score_key and not CareerDomain.query.filter_by(slug=score_key).first():
+                score_key = domain_aliases.get(score_key, score_key)
+        if score_key:
+            scores[score_key.lower()] += weight
         stored.append({"questionId": question.id, "optionId": option.id})
     return stored, dict(scores), None
 

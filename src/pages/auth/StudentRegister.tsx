@@ -90,7 +90,7 @@ function StudentRegister() {
           </div>
           <div className="space-y-2">
             <Label htmlFor="password">Password</Label>
-            <Input id="password" type="password" placeholder="Minimum 6 characters" {...register("password")} />
+            <Input id="password" type="password" placeholder="Minimum 8 characters" {...register("password")} />
             {errors.password && <p className="text-xs text-destructive">{errors.password.message}</p>}
           </div>
           <Button type="submit" size="lg" className="w-full" disabled={isSubmitting}>

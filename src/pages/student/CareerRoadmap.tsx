@@ -54,6 +54,16 @@ const emptyRoadmap: RoadmapData = {
   tips: [],
 };
 
+function isRoadmapData(value: unknown): value is RoadmapData {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Partial<RoadmapData>;
+  return typeof candidate.estimatedTimeline === "string"
+    && Array.isArray(candidate.entranceExams)
+    && Array.isArray(candidate.degreeSelection)
+    && Array.isArray(candidate.projects)
+    && Array.isArray(candidate.tips);
+}
+
 function CareerRoadmap() {
   const { isAuthenticated, isLoading: authLoading, user } = useAuth();
   const [roadmap, setRoadmap] = useState<RoadmapData>(emptyRoadmap);
@@ -64,6 +74,8 @@ function CareerRoadmap() {
   const [budget, setBudget] = useState("");
   const [location, setLocation] = useState("");
   const [careerGoal, setCareerGoal] = useState("");
+  const [savedRoadmapId, setSavedRoadmapId] = useState<number | null>(null);
+  const [savedRoadmapsLoading, setSavedRoadmapsLoading] = useState(true);
 
   const canGenerate = useMemo(() => selectedCareer && currentEducation && careerGoal, [selectedCareer, currentEducation, careerGoal]);
 
@@ -80,6 +92,32 @@ function CareerRoadmap() {
     setLocation((value) => value || user.city || "");
   }, [user]);
 
+  useEffect(() => {
+    if (!user) return;
+    let active = true;
+    api.get<{ success: boolean; data: Array<{ id: number; title: string; milestones: unknown }> }>("/students/me/roadmaps")
+      .then(({ data }) => {
+        const latest = data[0];
+        if (!active || !latest || !isRoadmapData(latest.milestones)) return;
+        setRoadmap(latest.milestones);
+        setSelectedCareer(latest.title);
+        setSavedRoadmapId(latest.id);
+      })
+      .catch((error: unknown) => {
+        if (active) {
+          toast.error("Unable to load saved roadmaps", {
+            description: error instanceof Error ? error.message : "Please try again.",
+          });
+        }
+      })
+      .finally(() => {
+        if (active) setSavedRoadmapsLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [user]);
+
   const generateRoadmap = async () => {
     if (!isAuthenticated) {
       toast.error("Please log in first.");
@@ -87,7 +125,7 @@ function CareerRoadmap() {
     }
     setLoading(true);
     try {
-      const data = await api.post<{ success: boolean; data: { roadmap: RoadmapData } }>("/ai/roadmap", {
+      const data = await api.post<{ success: boolean; message?: string; data: { roadmap: RoadmapData; aiEnhanced: boolean } }>("/ai/roadmap", {
         name: user?.fullName || "Student",
         selectedCareer,
         currentSkills: currentSkills.split(",").map((s) => s.trim()).filter(Boolean),
@@ -97,7 +135,25 @@ function CareerRoadmap() {
         careerGoal,
       });
       setRoadmap(data.data.roadmap);
-      toast.success("Roadmap generated successfully!");
+      let roadmapSaved = false;
+      try {
+        const saved = await api.post<{ success: boolean; data: { id: number } }>("/students/me/roadmaps", {
+          careerTitle: selectedCareer.trim(),
+          milestones: data.data.roadmap,
+        });
+        setSavedRoadmapId(saved.data.id);
+        roadmapSaved = true;
+      } catch (saveError) {
+        const saveMessage = saveError instanceof Error ? saveError.message : "The generated roadmap could not be saved.";
+        toast.warning("Roadmap generated but not saved", { description: saveMessage });
+      }
+      if (data.data.aiEnhanced) {
+        toast.success(roadmapSaved ? "AI roadmap generated and saved." : "AI roadmap generated.");
+      } else {
+        toast.warning("AI roadmap unavailable", {
+          description: data.message || "Showing a career-based fallback roadmap instead.",
+        });
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to generate roadmap";
       toast.error("Roadmap generation failed", { description: message });
@@ -117,6 +173,10 @@ function CareerRoadmap() {
 
       <Card>
         <CardContent className="p-5 space-y-4">
+          {savedRoadmapsLoading && <p className="text-xs text-muted-foreground">Checking for saved roadmaps...</p>}
+          {savedRoadmapId !== null && !savedRoadmapsLoading && (
+            <p className="text-xs text-emerald-700">This roadmap is saved to your account and will be available after you return.</p>
+          )}
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <div className="space-y-1.5">
               <Label>Selected Career</Label>

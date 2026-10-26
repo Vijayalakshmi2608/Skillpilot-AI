@@ -25,7 +25,7 @@ type ChatResponse = {
 };
 
 function CareerChat() {
-  const { isAuthenticated, isLoading: authLoading } = useAuth();
+  const { isAuthenticated, isLoading: authLoading, user } = useAuth();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -57,7 +57,12 @@ function CareerChat() {
     try {
       const data = await api.post<{ success: boolean; data: ChatResponse }>("/ai/chat", {
         message: text,
-        student_profile: {},
+        student_profile: {
+          name: user?.fullName,
+          stream: user?.stream,
+          city: user?.city,
+          education: user?.studentClass,
+        },
       });
       const assistantMessage: ChatMessage = {
         role: "assistant",

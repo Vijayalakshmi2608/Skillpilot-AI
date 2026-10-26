@@ -306,6 +306,56 @@ def test_career_recommendation_strips_markdown_code_fences(client):
     assert len(body["data"]["recommendations"]) == 5
 
 
+def test_career_recommendation_normalizes_common_model_json_shapes(client):
+    token = _register_and_login(client)
+    headers = _auth_headers(token)
+    provider_response = {
+        "careers": [
+            {"career_name": f"Career {index}", "match_score": "80", "reason": "Matches stated interests."}
+            for index in range(5)
+        ]
+    }
+    with patch("routes.ai.OpenRouterClient") as MockClient:
+        MockClient.return_value.chat_completion.return_value = {"content": json.dumps(provider_response)}
+        response = client.post("/api/ai/career-recommendation", json=VALID_PAYLOAD, headers=headers)
+
+    assert response.status_code == 200
+    recommendations = response.get_json()["data"]["recommendations"]
+    assert len(recommendations) == 5
+    assert recommendations[0]["careerName"] == "Career 0"
+    assert recommendations[0]["matchScore"] == 80
+    assert recommendations[0]["whyThisCareerMatches"] == "Matches stated interests."
+    assert recommendations[0]["requiredSkills"] == []
+
+
+def test_career_recommendation_retries_invalid_provider_json_once(client):
+    token = _register_and_login(client)
+    headers = _auth_headers(token)
+    with patch("routes.ai.OpenRouterClient") as MockClient:
+        mock_completion = MockClient.return_value.chat_completion
+        mock_completion.side_effect = [
+            {"content": "The model returned prose instead of JSON."},
+            _build_mock_response(),
+        ]
+        response = client.post("/api/ai/career-recommendation", json=VALID_PAYLOAD, headers=headers)
+
+    assert response.status_code == 200
+    assert len(response.get_json()["data"]["recommendations"]) == 5
+    assert mock_completion.call_count == 2
+
+
+def test_career_recommendation_rejects_model_output_without_career_identity(client):
+    token = _register_and_login(client)
+    headers = _auth_headers(token)
+    provider_response = {"recommendations": [{"matchScore": 80} for _ in range(5)]}
+    with patch("routes.ai.OpenRouterClient") as MockClient:
+        MockClient.return_value.chat_completion.return_value = {"content": json.dumps(provider_response)}
+        response = client.post("/api/ai/career-recommendation", json=VALID_PAYLOAD, headers=headers)
+
+    assert response.status_code == 500
+    assert response.get_json()["success"] is False
+
+
 # ---------------------------------------------------------------------------
 # AI Career Roadmap tests
 # ---------------------------------------------------------------------------

@@ -15,13 +15,16 @@ from config import Config
 from models import (
     AssessmentOption,
     AssessmentQuestion,
+    AssessmentResult,
     Career,
     CareerDomain,
     CareerRoadmap,
     College,
+    EntranceExam,
     Feedback,
     Scholarship,
     StudentProfile,
+    SavedCareer,
     User,
     db,
 )
@@ -191,6 +194,20 @@ def test_profile_update_persists_across_app_restart(tmp_path):
     assert reloaded.get_json()["data"]["profile"]["schoolName"] == "North School"
 
 
+def test_cors_preflight_allows_frontend_api_headers(client):
+    response = client.options(
+        "/api/auth/login",
+        headers={
+            "Origin": "http://localhost:5173",
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "content-type,authorization",
+        },
+    )
+    assert response.status_code == 200
+    assert response.headers["Access-Control-Allow-Origin"] == "http://localhost:5173"
+    assert "authorization" in response.headers["Access-Control-Allow-Headers"].lower()
+
+
 def test_career_college_and_scholarship_apis(client, app):
     account = _register(client)
     headers = _authorization(account["accessToken"])
@@ -225,6 +242,79 @@ def test_career_college_and_scholarship_apis(client, app):
     assert client.get("/api/scholarships/999999").status_code == 404
 
 
+def test_dashboard_uses_only_authenticated_users_saved_data(client, app):
+    first_account = _register(client, "first-dashboard@example.test")
+    second_account = _register(client, "second-dashboard@example.test")
+    first_headers = _authorization(first_account["accessToken"])
+    second_headers = _authorization(second_account["accessToken"])
+    with app.app_context():
+        first_user = User.query.filter_by(email="first-dashboard@example.test").one()
+        career = Career.query.filter_by(title="Validation Engineer").one()
+        db.session.add(SavedCareer(user_id=first_user.id, career_id=career.id))
+        db.session.add(AssessmentResult(
+            user_id=first_user.id,
+            answers=[],
+            result={"scores": {"technology": 1}, "recommendations": [{"id": career.id, "title": career.title, "matchScore": 1}]},
+        ))
+        db.session.add(EntranceExam(
+            domain_id=career.domain_id, name="Validation Entrance Exam",
+            conducting_body="Validation Board", level="UG Entrance", mode="Online",
+            exam_date=date(2027, 5, 1), is_active=True,
+        ))
+        db.session.commit()
+        career_id = career.id
+
+    first_dashboard = client.get("/api/students/me/dashboard", headers=first_headers)
+    second_dashboard = client.get("/api/students/me/dashboard", headers=second_headers)
+    assert first_dashboard.status_code == 200
+    assert first_dashboard.get_json()["data"]["stats"]["savedCareers"] == 1
+    assert first_dashboard.get_json()["data"]["latestAssessment"]["recommendations"][0]["id"] == career_id
+    assert first_dashboard.get_json()["data"]["upcomingExams"][0]["name"] == "Validation Entrance Exam"
+    assert first_dashboard.get_json()["data"]["scholarships"][0]["name"] == "Validation Scholarship"
+    activity_titles = {item["title"] for item in first_dashboard.get_json()["data"]["recentActivity"]}
+    assert "Career assessment completed" in activity_titles
+    assert "Saved Validation Engineer" in activity_titles
+    assert second_dashboard.status_code == 200
+    assert second_dashboard.get_json()["data"]["stats"]["savedCareers"] == 0
+    assert second_dashboard.get_json()["data"]["latestAssessment"] is None
+    assert client.get("/api/students/me/dashboard").status_code == 401
+
+
+def test_generated_roadmap_is_saved_and_scoped_to_owner(client, app):
+    first_account = _register(client, "first-roadmap@example.test")
+    second_account = _register(client, "second-roadmap@example.test")
+    first_headers = _authorization(first_account["accessToken"])
+    second_headers = _authorization(second_account["accessToken"])
+    milestones = {"estimatedTimeline": "4 years", "projects": [{"name": "Portfolio"}]}
+
+    invalid = client.post(
+        "/api/students/me/roadmaps",
+        headers=first_headers,
+        json={"careerTitle": "Not in catalogue", "milestones": milestones},
+    )
+    assert invalid.status_code == 422
+    saved = client.post(
+        "/api/students/me/roadmaps",
+        headers=first_headers,
+        json={"careerTitle": "Validation Engineer", "milestones": milestones},
+    )
+    assert saved.status_code == 201
+    assert saved.get_json()["data"]["milestones"] == milestones
+    updated_milestones = {"estimatedTimeline": "5 years", "projects": [{"name": "Portfolio 2"}]}
+    updated = client.post(
+        "/api/students/me/roadmaps",
+        headers=first_headers,
+        json={"careerTitle": "Validation Engineer", "milestones": updated_milestones},
+    )
+    assert updated.status_code == 201
+    assert updated.get_json()["data"]["id"] == saved.get_json()["data"]["id"]
+    own_roadmaps = client.get("/api/students/me/roadmaps", headers=first_headers).get_json()["data"]
+    other_roadmaps = client.get("/api/students/me/roadmaps", headers=second_headers).get_json()["data"]
+    assert len(own_roadmaps) == 1
+    assert own_roadmaps[0]["milestones"] == updated_milestones
+    assert other_roadmaps == []
+
+
 def test_assessment_and_student_access(client, app):
     account = _register(client)
     headers = _authorization(account["accessToken"])
@@ -251,6 +341,76 @@ def test_assessment_and_student_access(client, app):
     assert client.get("/api/students/me/recommendations", headers=headers).status_code == 200
     assert client.get("/api/students/me/roadmaps", headers=headers).status_code == 200
     assert client.get("/api/students/me/notifications", headers=headers).status_code == 200
+
+
+def test_assessment_scores_selected_domain_and_returns_matching_careers(client, app):
+    account = _register(client)
+    headers = _authorization(account["accessToken"])
+    with app.app_context():
+        question = AssessmentQuestion(
+            question="Which domain do you prefer?", category="interests", display_order=99, is_active=True,
+        )
+        db.session.add(question)
+        db.session.flush()
+        option = AssessmentOption(
+            question_id=question.id, option_text="Technology", value="technology", display_order=1,
+        )
+        db.session.add(option)
+        db.session.commit()
+        question_id, option_id = question.id, option.id
+
+    response = client.post(
+        "/api/assessment/submit",
+        headers=headers,
+        json={"answers": [{"questionId": question_id, "optionId": option_id}]},
+    )
+    assert response.status_code == 201, response.get_json()
+    result = response.get_json()["data"]["result"]
+    assert result["scores"] == {"technology": 1.0}
+    assert any(career["title"] == "Validation Engineer" for career in result["recommendations"])
+
+
+def test_profile_email_update_validation_and_uniqueness(client):
+    account = _register(client)
+    headers = _authorization(account["accessToken"])
+    _register(client, email="taken@example.test")
+
+    updated = client.patch(
+        "/api/students/me",
+        headers=headers,
+        json={"email": "  NEW-ADDRESS@example.test "},
+    )
+    assert updated.status_code == 200
+    assert updated.get_json()["data"]["email"] == "new-address@example.test"
+
+    assert client.patch(
+        "/api/students/me",
+        headers=headers,
+        json={"email": "not-an-email"},
+    ).status_code == 400
+    assert client.patch(
+        "/api/students/me",
+        headers=headers,
+        json={"email": "taken@example.test"},
+    ).status_code == 409
+    assert client.get("/api/auth/me", headers=headers).get_json()["data"]["email"] == "new-address@example.test"
+
+
+def test_assessment_results_are_scoped_to_the_authenticated_student(client):
+    first = _register(client, email="first-student@example.test")
+    second = _register(client, email="second-student@example.test")
+    first_headers = _authorization(first["accessToken"])
+    second_headers = _authorization(second["accessToken"])
+    question = client.get("/api/assessment/questions").get_json()["data"][0]
+
+    submitted = client.post(
+        "/api/assessment/submit",
+        headers=first_headers,
+        json={"answers": [{"questionId": question["id"], "optionId": question["options"][0]["id"]}]},
+    )
+    assert submitted.status_code == 201
+    assert len(client.get("/api/assessment/results", headers=first_headers).get_json()["data"]) == 1
+    assert client.get("/api/assessment/results", headers=second_headers).get_json()["data"] == []
 
 
 def test_admin_apis_and_authorization(client, app):

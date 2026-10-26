@@ -65,7 +65,14 @@ For each recommended career, provide a structured analysis with the following fi
 - topCompanies (list)
 - roadmapSummary
 
-Return ONLY a valid JSON object. Do not include markdown, code fences, or explanatory text outside the JSON."""
+Return ONLY a JSON object with this shape:
+{"recommendations":[{"careerName":"...","whyThisCareerMatches":"...","matchScore":75,
+"requiredDegree":"...","requiredSkills":["..."],"salaryRange":"...","futureDemand":"...",
+"advantages":["..."],"challenges":["..."],"requiredCertifications":["..."],
+"suggestedProjects":["..."],"internships":["..."],"higherStudies":["..."],
+"topCompanies":["..."],"roadmapSummary":"..."}]}
+Include exactly five distinct recommendations, use these exact camelCase keys, and provide every field.
+Do not include markdown, code fences, or explanatory text outside the JSON."""
 
 USER_PROMPT_TEMPLATE = """\
 Student Profile:
@@ -155,6 +162,82 @@ def _sanitize_json_string(raw: str) -> str:
     return stripped.strip()
 
 
+def _normalise_recommendation_response(data: Any) -> Any:
+    """Normalize common model JSON variations without inventing recommendation content."""
+    if isinstance(data, list):
+        recommendations = data
+    elif isinstance(data, dict):
+        recommendations = data.get("recommendations")
+        if recommendations is None:
+            for key in ("careerRecommendations", "career_recommendations", "careers"):
+                if isinstance(data.get(key), list):
+                    recommendations = data[key]
+                    break
+        if recommendations is None:
+            for key in ("data", "result"):
+                nested = data.get(key)
+                if isinstance(nested, dict):
+                    normalized = _normalise_recommendation_response(nested)
+                    if isinstance(normalized, dict) and isinstance(normalized.get("recommendations"), list):
+                        return normalized
+        if not isinstance(recommendations, list):
+            return data
+    else:
+        return data
+
+    aliases = {
+        "career": "careerName",
+        "name": "careerName",
+        "reason": "whyThisCareerMatches",
+        "match": "matchScore",
+        "degree": "requiredDegree",
+        "skills": "requiredSkills",
+        "salary": "salaryRange",
+        "demand": "futureDemand",
+        "certifications": "requiredCertifications",
+        "projects": "suggestedProjects",
+        "companies": "topCompanies",
+        "summary": "roadmapSummary",
+    }
+    canonical_fields = {
+        re.sub(r"[^a-z0-9]", "", field.lower()): field
+        for field in EXPECTED_KEYS_PER_CAREER
+    }
+    list_fields = (
+        "requiredSkills", "advantages", "challenges", "requiredCertifications",
+        "suggestedProjects", "internships", "higherStudies", "topCompanies",
+    )
+    string_fields = (
+        "whyThisCareerMatches", "requiredDegree", "salaryRange", "futureDemand",
+        "roadmapSummary",
+    )
+    normalized_recommendations = []
+    for item in recommendations:
+        if not isinstance(item, dict):
+            normalized_recommendations.append(item)
+            continue
+        normalized_item = {}
+        for key, value in item.items():
+            if not isinstance(key, str):
+                continue
+            compact_key = re.sub(r"[^a-z0-9]", "", key.lower())
+            canonical = aliases.get(key, canonical_fields.get(compact_key, key))
+            normalized_item[canonical] = value
+        for field in list_fields:
+            if field not in normalized_item:
+                normalized_item[field] = []
+        for field in string_fields:
+            if field not in normalized_item:
+                normalized_item[field] = ""
+        if isinstance(normalized_item.get("matchScore"), str):
+            try:
+                normalized_item["matchScore"] = float(normalized_item["matchScore"].rstrip("%"))
+            except ValueError:
+                pass
+        normalized_recommendations.append(normalized_item)
+    return {"recommendations": normalized_recommendations}
+
+
 def _validate_response_structure(data: Any) -> List[str]:
     """Return a list of validation errors for the parsed AI response."""
     if not isinstance(data, dict):
@@ -169,9 +252,11 @@ def _validate_response_structure(data: Any) -> List[str]:
         if not isinstance(rec, dict):
             errors.append(f"Recommendation {idx + 1} is not an object.")
             continue
-        missing = EXPECTED_KEYS_PER_CAREER - set(rec.keys())
+        missing = {"careerName", "matchScore"} - set(rec.keys())
         if missing:
             errors.append(f"Recommendation {idx + 1} is missing fields: {', '.join(sorted(missing))}.")
+        if not isinstance(rec.get("careerName"), str) or not rec.get("careerName", "").strip():
+            errors.append(f"Recommendation {idx + 1} has an invalid careerName.")
         if not isinstance(rec.get("matchScore"), (int, float)) or not (0 <= float(rec.get("matchScore", -1)) <= 100):
             errors.append(f"Recommendation {idx + 1} has an invalid matchScore (must be 0-100).")
         if not isinstance(rec.get("requiredSkills"), list):
@@ -190,6 +275,9 @@ def _validate_response_structure(data: Any) -> List[str]:
             errors.append(f"Recommendation {idx + 1} higherStudies must be a list.")
         if not isinstance(rec.get("topCompanies"), list):
             errors.append(f"Recommendation {idx + 1} topCompanies must be a list.")
+        for field in ("whyThisCareerMatches", "requiredDegree", "salaryRange", "futureDemand", "roadmapSummary"):
+            if not isinstance(rec.get(field), str):
+                errors.append(f"Recommendation {idx + 1} {field} must be a string.")
     return errors
 
 
@@ -220,34 +308,60 @@ def career_recommendation():
 
     try:
         client = _openrouter_client()
-        result = client.chat_completion(messages=messages, temperature=0.7, max_tokens=4096)
-        raw_content = result["content"]
-    except OpenRouterRateLimitError as exc:
-        logger.warning("OpenRouter rate limit hit for user %s: %s", user.id, exc)
-        return error_response("AI service is temporarily rate-limited. Please try again later.", 429)
-    except OpenRouterTimeoutError as exc:
-        logger.warning("OpenRouter timeout for user %s: %s", user.id, exc)
-        return error_response("AI service timed out. Please try again later.", 504)
-    except OpenRouterError as exc:
-        logger.error("OpenRouter error for user %s: %s", user.id, exc)
-        return server_error_response("AI service is currently unavailable.")
-    except Exception as exc:
-        logger.exception("Unexpected error calling OpenRouter for user %s.", user.id)
+    except Exception:
+        logger.exception("Unable to initialize OpenRouter for user %s.", user.id)
         return server_error_response("AI service is currently unavailable.")
 
-    cleaned = _sanitize_json_string(raw_content)
-    try:
-        parsed = json.loads(cleaned)
-    except json.JSONDecodeError:
-        logger.error("OpenRouter returned non-JSON content for user %s.", user.id)
-        return server_error_response("AI service returned an invalid response.")
+    request_messages = messages
+    for attempt in range(2):
+        try:
+            result = client.chat_completion(messages=request_messages, temperature=0.7, max_tokens=4096)
+            raw_content = result.get("content")
+        except OpenRouterRateLimitError as exc:
+            logger.warning("OpenRouter rate limit hit for user %s: %s", user.id, exc)
+            return error_response("AI service is temporarily rate-limited. Please try again later.", 429)
+        except OpenRouterTimeoutError as exc:
+            logger.warning("OpenRouter timeout for user %s: %s", user.id, exc)
+            return error_response("AI service timed out. Please try again later.", 504)
+        except OpenRouterError as exc:
+            logger.error("OpenRouter error for user %s: %s", user.id, exc)
+            return server_error_response("AI service is currently unavailable.")
+        except Exception:
+            logger.exception("Unexpected error calling OpenRouter for user %s.", user.id)
+            return server_error_response("AI service is currently unavailable.")
 
-    structure_errors = _validate_response_structure(parsed)
-    if structure_errors:
-        logger.error("OpenRouter response structure invalid for user %s: %s.", user.id, structure_errors)
-        return server_error_response("AI service returned an incompatible response structure.")
+        try:
+            if not isinstance(raw_content, str):
+                raise json.JSONDecodeError("Provider content was not text.", "", 0)
+            parsed = json.loads(_sanitize_json_string(raw_content))
+            parsed = _normalise_recommendation_response(parsed)
+            structure_errors = _validate_response_structure(parsed)
+        except json.JSONDecodeError:
+            structure_errors = ["Response was not valid JSON."]
 
-    return ok({"recommendations": parsed["recommendations"]}, "Career recommendations generated successfully.")
+        if not structure_errors:
+            return ok({"recommendations": parsed["recommendations"]}, "Career recommendations generated successfully.")
+
+        logger.warning(
+            "OpenRouter recommendation response invalid for user %s on attempt %s: %s",
+            user.id, attempt + 1, structure_errors,
+        )
+        if attempt == 0:
+            request_messages = [
+                *messages,
+                {"role": "assistant", "content": raw_content if isinstance(raw_content, str) else ""},
+                {
+                    "role": "user",
+                    "content": (
+                        "Your previous response did not satisfy the required JSON contract. "
+                        f"Correct these issues: {'; '.join(structure_errors)} "
+                        "Return exactly five recommendations as one JSON object with the specified keys, "
+                        "without markdown or extra text."
+                    ),
+                },
+            ]
+
+    return server_error_response("AI service returned an invalid or incompatible response after retry.")
 
 
 # ---------------------------------------------------------------------------

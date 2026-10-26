@@ -98,7 +98,7 @@ function AppRoutes() {
         <Route path="/admin/login" element={<AdminLogin />} />
 
         {/* Student */}
-        <Route path="/student" element={<StudentLayout />}>
+        <Route path="/student" element={<ProtectedRoute><StudentLayout /></ProtectedRoute>}>
           <Route index element={<Navigate to="/student/dashboard" replace />} />
           <Route path="dashboard" element={<StudentDashboard />} />
           <Route path="profile" element={<StudentProfile />} />
