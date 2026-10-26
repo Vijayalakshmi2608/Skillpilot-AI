@@ -88,7 +88,7 @@ function ResumeBuilder() {
           <CardContent>
             <div className="overflow-hidden rounded-xl border shadow-lg">
               <div className={cn("h-2 w-full", active.accent)} />
-              <div className="bg-white p-6 text-slate-900 dark:bg-white">
+              <div className="bg-white p-6 text-slate-900">
                 <h2 className="font-display text-2xl font-extrabold">{name || "Your Name"}</h2>
                 <p className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
                   <span className="flex items-center gap-1"><Mail className="h-3 w-3" /> {email || "email@example.com"}</span>

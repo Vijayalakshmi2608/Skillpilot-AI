@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import { BrainCircuit, Loader2, Sparkles, TrendingUp, Users } from "lucide-react";
@@ -34,9 +34,11 @@ function AiRecommendation() {
   const [recommendations, setRecommendations] = useState<CareerRecommendation[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const requestInFlight = useRef(false);
 
   const generateRecommendations = useCallback(async () => {
-    if (!user) return;
+    if (!user || requestInFlight.current) return;
+    requestInFlight.current = true;
     setLoading(true);
     setError(null);
 
@@ -67,6 +69,7 @@ function AiRecommendation() {
       setError(message);
       toast.error("AI recommendations unavailable", { description: message });
     } finally {
+      requestInFlight.current = false;
       setLoading(false);
     }
   }, [user]);

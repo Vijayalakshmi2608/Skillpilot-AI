@@ -44,7 +44,7 @@ function ManageCareers() {
             </Badge>
           ),
         },
-        { header: "Growth", hidden: "hidden md:table-cell", render: (r) => <span className="font-semibold text-emerald-600 dark:text-emerald-400">+{(r as { growth: number }).growth}%</span> },
+        { header: "Growth", hidden: "hidden md:table-cell", render: (r) => <span className="font-semibold text-emerald-700">+{(r as { growth: number }).growth}%</span> },
         { header: "Skills", hidden: "hidden xl:table-cell", render: (r) => <span className="text-muted-foreground">{(r as { skills: string[] }).skills.slice(0, 3).join(", ")}</span> },
       ]}
     />

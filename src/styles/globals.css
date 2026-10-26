@@ -26,28 +26,6 @@
     --radius: 0.75rem;
   }
 
-  .dark {
-    --background: 222 47% 6%;
-    --foreground: 210 40% 98%;
-    --card: 222 47% 9%;
-    --card-foreground: 210 40% 98%;
-    --popover: 222 47% 8%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 217 91% 60%;
-    --primary-foreground: 222 47% 6%;
-    --secondary: 243 75% 64%;
-    --secondary-foreground: 222 47% 6%;
-    --muted: 217 33% 14%;
-    --muted-foreground: 215 20% 65%;
-    --accent: 161 84% 41%;
-    --accent-foreground: 222 47% 6%;
-    --destructive: 0 72% 51%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 217 33% 17%;
-    --input: 217 33% 17%;
-    --ring: 217 91% 60%;
-  }
-
   * {
     @apply border-border;
   }
@@ -59,6 +37,7 @@
   body {
     @apply bg-background text-foreground antialiased;
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    background-image: radial-gradient(circle at top, rgb(239 246 255 / 0.8), transparent 38rem);
   }
 
   ::selection {
@@ -68,7 +47,7 @@
 
 @layer utilities {
   .glass {
-    @apply bg-white/70 backdrop-blur-xl border border-white/40 dark:bg-white/[0.04] dark:border-white/10;
+    @apply border border-white/70 bg-white/80 backdrop-blur-xl;
   }
 
   .text-gradient {

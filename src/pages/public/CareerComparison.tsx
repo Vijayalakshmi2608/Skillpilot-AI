@@ -115,7 +115,7 @@ function CareerComparison() {
             <CardContent className="grid gap-4 sm:grid-cols-2">
               {[left, right].map((c) => (
                 <div key={c.id} className="space-y-2 text-sm">
-                  <p className="text-xs font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">Pros</p>
+                  <p className="text-xs font-bold uppercase tracking-wider text-emerald-700">Pros</p>
                   {c.pros.map((p) => <p key={p} className="text-muted-foreground">• {p}</p>)}
                   <p className="pt-2 text-xs font-bold uppercase tracking-wider text-destructive">Cons</p>
                   {c.cons.map((p) => <p key={p} className="text-muted-foreground">• {p}</p>)}

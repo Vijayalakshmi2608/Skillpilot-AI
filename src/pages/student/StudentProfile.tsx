@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -30,6 +30,7 @@ type FormData = z.infer<typeof schema>;
 
 function StudentProfile() {
   const { user, refreshProfile } = useAuth();
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const { register, handleSubmit, reset, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema),
     defaultValues: { fullName: "", email: "", phone: "", city: "", school: "", stream: "", boardScore: "" },
@@ -42,12 +43,16 @@ function StudentProfile() {
   }, [user, reset]);
 
   const onSubmit = async (data: FormData) => {
+    if (isSubmitting) return;
+    setIsSubmitting(true);
     try {
       await api.patch("/students/me", data);
       await refreshProfile();
       toast.success("Profile saved!", { description: "Your profile has been updated." });
     } catch (error) {
       toast.error("Unable to save profile", { description: error instanceof Error ? error.message : "Please try again." });
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -144,7 +149,7 @@ function StudentProfile() {
                 {errors.boardScore && <p className="text-xs text-destructive">{errors.boardScore.message}</p>}
               </div>
               <div className="flex items-end">
-                <Button type="submit" className="w-full">Save Changes</Button>
+                <Button type="submit" className="w-full" disabled={isSubmitting}>{isSubmitting ? "Saving..." : "Save Changes"}</Button>
               </div>
             </form>
           </CardContent>

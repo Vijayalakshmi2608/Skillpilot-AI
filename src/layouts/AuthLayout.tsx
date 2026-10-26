@@ -1,6 +1,5 @@
 import { Link } from "react-router-dom";
 import { CheckCircle2, Compass, Sparkles } from "lucide-react";
-import { ThemeToggle } from "@/components/common/ThemeToggle";
 import { Logo } from "@/components/common/Logo";
 
 interface AuthLayoutProps {
@@ -57,9 +56,6 @@ function AuthLayout({ children, role = "student" }: AuthLayoutProps) {
       <div className="relative flex flex-col">
         <div className="flex items-center justify-between p-6">
           <Logo className="lg:hidden" />
-          <div className="ml-auto">
-            <ThemeToggle />
-          </div>
         </div>
         <div className="flex flex-1 items-center justify-center px-6 pb-16 pt-4">{children}</div>
       </div>

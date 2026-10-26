@@ -125,7 +125,7 @@ function CareerRoadmap() {
     }
     setLoading(true);
     try {
-      const data = await api.post<{ success: boolean; message?: string; data: { roadmap: RoadmapData; aiEnhanced: boolean } }>("/ai/roadmap", {
+      const data = await api.post<{ success: boolean; data: { roadmap: RoadmapData } }>("/ai/roadmap", {
         name: user?.fullName || "Student",
         selectedCareer,
         currentSkills: currentSkills.split(",").map((s) => s.trim()).filter(Boolean),
@@ -147,13 +147,7 @@ function CareerRoadmap() {
         const saveMessage = saveError instanceof Error ? saveError.message : "The generated roadmap could not be saved.";
         toast.warning("Roadmap generated but not saved", { description: saveMessage });
       }
-      if (data.data.aiEnhanced) {
-        toast.success(roadmapSaved ? "AI roadmap generated and saved." : "AI roadmap generated.");
-      } else {
-        toast.warning("AI roadmap unavailable", {
-          description: data.message || "Showing a career-based fallback roadmap instead.",
-        });
-      }
+      toast.success(roadmapSaved ? "AI roadmap generated and saved." : "AI roadmap generated.");
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to generate roadmap";
       toast.error("Roadmap generation failed", { description: message });

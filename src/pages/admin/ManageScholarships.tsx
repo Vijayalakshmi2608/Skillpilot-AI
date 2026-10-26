@@ -28,7 +28,7 @@ function ManageScholarships() {
             );
           },
         },
-        { header: "Amount", render: (r) => <span className="font-semibold text-emerald-600 dark:text-emerald-400">{(r as { amount: string }).amount}</span> },
+        { header: "Amount", render: (r) => <span className="font-semibold text-emerald-700">{(r as { amount: string }).amount}</span> },
         { header: "Deadline", hidden: "hidden md:table-cell", render: (r) => <Badge variant="warning">{(r as { deadline: string }).deadline}</Badge> },
         { header: "Eligibility", hidden: "hidden xl:table-cell", render: (r) => <span className="text-xs text-muted-foreground">{(r as { eligibility: string[] }).eligibility[0]}</span> },
       ]}

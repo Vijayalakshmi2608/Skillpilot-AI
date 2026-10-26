@@ -81,7 +81,7 @@ function AdminAnalytics() {
           <div key={s.l} className="rounded-xl border bg-card p-5 shadow-card">
             <p className="text-xs uppercase tracking-wider text-muted-foreground">{s.l}</p>
             <p className="mt-1 font-display text-2xl font-bold">{s.v}</p>
-            <p className="mt-1 text-xs text-emerald-600 dark:text-emerald-400">{s.d}</p>
+            <p className="mt-1 text-xs text-emerald-700">{s.d}</p>
           </div>
         ))}
       </div>

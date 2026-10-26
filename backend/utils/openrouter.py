@@ -41,9 +41,11 @@ class OpenRouterClient:
     ):
         self.api_key = api_key or os.getenv("OPENROUTER_API_KEY")
         self.api_url = api_url or os.getenv("OPENROUTER_API_URL", "https://openrouter.ai/api/v1/chat/completions")
-        self.model = model or os.getenv("OPENROUTER_MODEL", "meta-llama/llama-3.1-8b-instruct:free")
-        self.timeout = timeout
-        self.max_retries = max_retries
+        self.model = model or os.getenv("OPENROUTER_MODEL", "openrouter/free")
+        self.timeout = max(1, int(timeout))
+        # At least one attempt is required; cap retries so a bad environment
+        # setting cannot hold a web request open indefinitely.
+        self.max_retries = min(3, max(1, int(max_retries)))
         self.backoff_factor = backoff_factor
 
         if not self.api_key:
@@ -130,11 +132,21 @@ class OpenRouterClient:
                 logger.error("OpenRouter returned invalid JSON on attempt %d.", attempt)
                 raise OpenRouterError("OpenRouter returned an invalid JSON response.") from exc
 
-            if "choices" not in data or not data["choices"]:
+            if not isinstance(data, dict):
+                raise OpenRouterError("OpenRouter returned a JSON response with an invalid top-level structure.")
+
+            choices = data.get("choices")
+            if not isinstance(choices, list) or not choices:
                 raise OpenRouterError("OpenRouter response is missing 'choices'.")
 
-            content = data["choices"][0].get("message", {}).get("content", "")
-            if not content:
+            first_choice = choices[0]
+            if not isinstance(first_choice, dict):
+                raise OpenRouterError("OpenRouter response contains an invalid choice.")
+            message = first_choice.get("message")
+            if not isinstance(message, dict):
+                raise OpenRouterError("OpenRouter response is missing the assistant message.")
+            content = message.get("content")
+            if not isinstance(content, str) or not content.strip():
                 raise OpenRouterError("OpenRouter returned an empty message content.")
 
             usage = data.get("usage", {})

@@ -108,7 +108,7 @@ function Landing() {
             <motion.div initial={{ opacity: 0, scale: 0.94 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.6, delay: 0.2 }} className="relative">
               <div className="relative mx-auto max-w-md">
                 <div className="absolute -inset-8 rounded-[2.5rem] bg-gradient-to-br from-blue-600/20 via-indigo-600/10 to-emerald-500/20 blur-2xl" />
-                <Card className="relative overflow-hidden border-white/40 bg-white/80 shadow-2xl backdrop-blur-xl dark:bg-white/[0.06] dark:border-white/10">
+                <Card className="relative overflow-hidden border-white/70 bg-white/80 shadow-2xl backdrop-blur-xl">
                   <CardContent className="p-6">
                     <div className="flex items-center justify-between">
                       <div>
@@ -143,10 +143,10 @@ function Landing() {
                   </CardContent>
                 </Card>
 
-                <div className="animate-float absolute -left-10 top-10 hidden rounded-2xl border border-white/40 bg-white/90 px-4 py-3 shadow-xl backdrop-blur dark:bg-white/[0.08] sm:block">
+                <div className="animate-float absolute -left-10 top-10 hidden rounded-2xl border border-white/40 bg-white/90 px-4 py-3 shadow-xl backdrop-blur sm:block">
                   <p className="flex items-center gap-2 text-xs font-semibold"><GraduationCap className="h-4 w-4 text-primary" /> 4 exams tracked</p>
                 </div>
-                <div className="animate-float absolute -right-8 bottom-24 hidden rounded-2xl border border-white/40 bg-white/90 px-4 py-3 shadow-xl backdrop-blur [animation-delay:1.2s] dark:bg-white/[0.08] sm:block">
+                <div className="animate-float absolute -right-8 bottom-24 hidden rounded-2xl border border-white/40 bg-white/90 px-4 py-3 shadow-xl backdrop-blur [animation-delay:1.2s] sm:block">
                   <p className="flex items-center gap-2 text-xs font-semibold"><Users className="h-4 w-4 text-emerald-500" /> 18-day streak 🔥</p>
                 </div>
               </div>

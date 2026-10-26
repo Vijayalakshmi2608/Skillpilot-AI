@@ -5,7 +5,7 @@ import { Menu, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Logo } from "@/components/common/Logo";
-import { ThemeToggle } from "@/components/common/ThemeToggle";
+import { buttonVariants } from "@/components/ui/button";
 
 const links = [
   { to: "/", label: "Home" },
@@ -45,7 +45,6 @@ function Navbar() {
         </nav>
 
         <div className="flex items-center gap-2">
-          <ThemeToggle />
           <Link to="/login" className="hidden sm:inline-flex">
             <Button variant="ghost" size="sm">Login</Button>
           </Link>
@@ -86,12 +85,8 @@ function Navbar() {
                 </NavLink>
               ))}
               <div className="mt-2 flex gap-2">
-                <Button variant="outline" size="sm" className="flex-1">
-                  <Link to="/login" className="w-full">Login</Link>
-                </Button>
-                <Button size="sm" className="flex-1">
-                  <Link to="/register" className="w-full">Get Started</Link>
-                </Button>
+                <Link to="/login" onClick={() => setOpen(false)} className={cn(buttonVariants({ variant: "outline", size: "sm" }), "flex-1")}>Login</Link>
+                <Link to="/register" onClick={() => setOpen(false)} className={cn(buttonVariants({ size: "sm" }), "flex-1")}>Get Started</Link>
               </div>
             </div>
           </motion.nav>

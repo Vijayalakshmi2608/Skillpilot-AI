@@ -48,7 +48,7 @@ Analyse the student's profile holistically across these dimensions:
 - Future Job Trends
 - Industry Demand
 
-For each recommended career, provide a structured analysis with the following fields:
+For each recommended career, provide a concise, evidence-based analysis with the following fields:
 - careerName
 - whyThisCareerMatches
 - matchScore (integer 0-100)
@@ -71,7 +71,8 @@ Return ONLY a JSON object with this shape:
 "advantages":["..."],"challenges":["..."],"requiredCertifications":["..."],
 "suggestedProjects":["..."],"internships":["..."],"higherStudies":["..."],
 "topCompanies":["..."],"roadmapSummary":"..."}]}
-Include exactly five distinct recommendations, use these exact camelCase keys, and provide every field.
+Return 3 to 5 distinct recommendations, use these exact camelCase keys, and keep each string or list item to one concise sentence or phrase.
+Match scores are AI-generated estimates, not measured predictions. Do not present salary, cutoff, or job-market claims as verified facts.
 Do not include markdown, code fences, or explanatory text outside the JSON."""
 
 USER_PROMPT_TEMPLATE = """\
@@ -89,7 +90,7 @@ Student Profile:
 - Preferred Location: {preferred_location}
 - Preferred Study Type: {preferred_study_type}
 
-Provide exactly 5 career recommendations in the specified JSON structure."""
+Provide 3 to 5 career recommendations in the specified JSON structure. Use only the supplied profile; state when additional information would improve personalisation."""
 
 EXPECTED_KEYS_PER_CAREER = {
     "careerName", "whyThisCareerMatches", "matchScore", "requiredDegree",
@@ -245,8 +246,8 @@ def _validate_response_structure(data: Any) -> List[str]:
     if "recommendations" not in data:
         return ["Response is missing 'recommendations' array."]
     recs = data.get("recommendations")
-    if not isinstance(recs, list) or len(recs) != 5:
-        return ["'recommendations' must be an array of exactly 5 items."]
+    if not isinstance(recs, list) or not 1 <= len(recs) <= 5:
+        return ["'recommendations' must be an array containing 1 to 5 items."]
     errors = []
     for idx, rec in enumerate(recs):
         if not isinstance(rec, dict):
@@ -307,7 +308,9 @@ def career_recommendation():
     ]
 
     try:
-        client = _openrouter_client()
+        # A schema-repair request below is the single bounded recovery path.
+        # Do not multiply it with transport retries for this interactive tab.
+        client = _openrouter_client(timeout=min(current_app.config["OPENROUTER_TIMEOUT"], 45), max_retries=1)
     except Exception:
         logger.exception("Unable to initialize OpenRouter for user %s.", user.id)
         return server_error_response("AI service is currently unavailable.")
@@ -315,7 +318,7 @@ def career_recommendation():
     request_messages = messages
     for attempt in range(2):
         try:
-            result = client.chat_completion(messages=request_messages, temperature=0.7, max_tokens=4096)
+            result = client.chat_completion(messages=request_messages, temperature=0.4, max_tokens=2400)
             raw_content = result.get("content")
         except OpenRouterRateLimitError as exc:
             logger.warning("OpenRouter rate limit hit for user %s: %s", user.id, exc)
@@ -355,7 +358,7 @@ def career_recommendation():
                     "content": (
                         "Your previous response did not satisfy the required JSON contract. "
                         f"Correct these issues: {'; '.join(structure_errors)} "
-                        "Return exactly five recommendations as one JSON object with the specified keys, "
+                        "Return 1 to 5 concise recommendations as one JSON object with the specified keys, "
                         "without markdown or extra text."
                     ),
                 },
@@ -459,36 +462,6 @@ def _normalise_roadmap_payload(data: Dict[str, Any], user: User) -> Dict[str, An
     return normalised
 
 
-def _fallback_roadmap(data: Dict[str, Any]) -> Dict[str, Any]:
-    """Create a safe, career-specific roadmap when an AI provider is unavailable."""
-    career = data["selectedCareer"]
-    education = data["currentEducation"]
-    skills = data["currentSkills"]
-    location = data["location"]
-    goal = data["careerGoal"]
-    skills_text = ", ".join(skills) if skills else "your current skills"
-    return {
-        "entranceExams": [{"name": "Relevant entrance examination", "eligibility": f"Check current eligibility for {career} after {education}.", "prepTips": "Confirm the official syllabus, deadline, and admission requirements."}],
-        "degreeSelection": [{"degree": f"A recognised programme related to {career}", "reason": f"Builds the foundation needed to pursue {goal}."}],
-        "semesterWiseLearning": [{"semester": "Foundation", "focus": f"Strengthen fundamentals and build on {skills_text}."}, {"semester": "Applied learning", "focus": f"Complete practical projects relevant to {career}."}],
-        "certifications": [{"name": f"Industry-recognised {career} certification", "timeline": "After foundational learning"}],
-        "projects": [{"name": f"Portfolio project for {career}", "difficulty": "Beginner to intermediate"}],
-        "internships": [{"company": "Relevant local or remote organisation", "type": f"Internship aligned with {career}"}],
-        "hackathons": [{"name": "Domain-relevant student competition", "type": "Portfolio and networking"}],
-        "portfolio": [{"item": "Documented project case studies, skills, and achievements"}],
-        "resumePreparation": ["Tailor the resume to the selected career.", "Quantify project outcomes and learning."],
-        "placementPreparation": ["Track opportunities and eligibility deadlines.", "Practise career-specific aptitude and communication skills."],
-        "interviewPreparation": ["Prepare a concise introduction and portfolio walkthrough.", "Practise role-specific technical or subject questions."],
-        "higherStudies": [{"option": f"Specialisation related to {career}", "benefit": "Build deeper expertise after foundational study."}],
-        "estimatedTimeline": f"Start from {education}, review requirements in {location}, and progress toward {goal} through study, projects, and experience.",
-        "monthlyGoals": ["Review official eligibility and admissions information.", "Practise one core skill weekly.", "Complete a small career-relevant project.", "Update your learning plan using progress evidence."],
-        "yearlyGoals": ["Build strong academic foundations.", "Create a portfolio with relevant work.", "Apply for suitable learning, mentorship, and internship opportunities."],
-        "freeResources": ["Official entrance-exam websites", "Open educational resources", "Library and school career guidance resources"],
-        "paidResources": ["Accredited courses only after comparing syllabus, cost, and outcomes"],
-        "tips": ["Verify every exam and course deadline on its official website.", "Choose projects that demonstrate the skills required for the selected career.", "Review this roadmap as your interests and results evolve."],
-    }
-
-
 def _validate_roadmap_structure(data: Any) -> List[str]:
     required_keys = {
         "entranceExams", "degreeSelection", "semesterWiseLearning", "certifications",
@@ -509,17 +482,6 @@ def _validate_roadmap_structure(data: Any) -> List[str]:
     return []
 
 
-def _complete_roadmap(ai_response: Any, fallback: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    """Merge a valid partial AI roadmap into the UI's complete roadmap shape."""
-    if not isinstance(ai_response, dict) or not isinstance(ai_response.get("roadmap"), dict):
-        return None
-    roadmap = dict(fallback)
-    for key, value in ai_response["roadmap"].items():
-        if key in roadmap and isinstance(value, type(roadmap[key])):
-            roadmap[key] = value
-    return roadmap
-
-
 @ai_bp.post("/roadmap")
 @jwt_required()
 def career_roadmap():
@@ -536,7 +498,6 @@ def career_roadmap():
     if validation_errors:
         return error_response("Validation failed.", 422, validation_errors)
 
-    fallback = _fallback_roadmap(data)
     if not current_app.config.get("OPENROUTER_API_KEY"):
         logger.warning("OpenRouter is not configured for user %s.", user.id)
         return server_error_response("AI service is not configured.")
@@ -562,11 +523,7 @@ def career_roadmap():
         return error_response("AI service timed out. Please try again later.", 504)
     except OpenRouterError as exc:
         logger.error("OpenRouter error for user %s: %s", user.id, exc)
-        # The free router can complete a request with an empty final content
-        # field (for example after consuming its budget on reasoning).  The
-        # student's selected career remains sufficient to return a useful,
-        # complete roadmap rather than surfacing a gateway failure.
-        return ok({"roadmap": fallback, "aiEnhanced": False}, "Roadmap generated from your selected career while AI response is unavailable.")
+        return server_error_response("AI service is currently unavailable.")
     except Exception:
         logger.exception("Unexpected error calling OpenRouter for user %s.", user.id)
         return server_error_response("Unable to generate roadmap.")
@@ -576,14 +533,14 @@ def career_roadmap():
         parsed = json.loads(cleaned)
     except json.JSONDecodeError:
         logger.error("OpenRouter returned non-JSON content for user %s.", user.id)
-        return ok({"roadmap": fallback, "aiEnhanced": False}, "Roadmap generated from your selected career while AI formatting is unavailable.")
+        return server_error_response("AI service returned an invalid response.")
 
-    roadmap = _complete_roadmap(parsed, fallback)
-    if roadmap is None:
-        logger.error("OpenRouter response structure invalid for user %s.", user.id)
-        return ok({"roadmap": fallback, "aiEnhanced": False}, "Roadmap generated from your selected career while AI formatting is unavailable.")
+    structure_errors = _validate_roadmap_structure(parsed)
+    if structure_errors:
+        logger.error("OpenRouter response structure invalid for user %s: %s", user.id, structure_errors)
+        return server_error_response("AI service returned an incompatible response structure.")
 
-    return ok({"roadmap": roadmap, "aiEnhanced": True}, "Career roadmap generated successfully.")
+    return ok({"roadmap": parsed["roadmap"]}, "Career roadmap generated successfully.")
 
 
 # ---------------------------------------------------------------------------

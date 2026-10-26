@@ -17,7 +17,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar } from "@/components/ui/avatar";
 import { DropdownMenu, DropdownItem } from "@/components/ui/dropdown-menu";
-import { ThemeToggle } from "@/components/common/ThemeToggle";
 import { Logo } from "@/components/common/Logo";
 import { Sidebar, type SidebarSection } from "@/components/layout/Sidebar";
 import { useAuth } from "@/contexts/AuthContext";
@@ -41,6 +40,7 @@ function AppShell({ sections, title, subtitle, role, notificationsTo, profileTo,
 
   const notificationsHref = notificationsTo ?? (role === "student" ? "/student/notifications" : "/admin/notifications");
   const profileHref = profileTo ?? (role === "student" ? "/student/profile" : "/admin/settings");
+  const settingsHref = role === "student" ? "/student/settings" : "/admin/settings";
   const logoutTo = role === "student" ? "/login" : "/admin/login";
   const homeTo = role === "student" ? "/student/dashboard" : "/admin";
   const displayName = role === "student" ? user?.fullName || "Student" : "Admin";
@@ -120,8 +120,6 @@ function AppShell({ sections, title, subtitle, role, notificationsTo, profileTo,
               />
             </div>
 
-            <ThemeToggle />
-
             <Link to={notificationsHref}>
               <Button variant="ghost" size="icon" className="relative">
                 <Bell className="h-5 w-5" />
@@ -155,7 +153,7 @@ function AppShell({ sections, title, subtitle, role, notificationsTo, profileTo,
                       </Link>
                     </DropdownItem>
                     <DropdownItem onClick={close}>
-                      <Link to="/student/settings" className="flex w-full items-center gap-2">
+                      <Link to={settingsHref} className="flex w-full items-center gap-2">
                         <Settings className="h-4 w-4" /> Settings
                       </Link>
                     </DropdownItem>

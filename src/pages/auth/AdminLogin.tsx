@@ -1,4 +1,4 @@
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -8,6 +8,7 @@ import { AuthLayout } from "@/layouts/AuthLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useState } from "react";
 
 const schema = z.object({
   email: z.string().email("Enter a valid email"),
@@ -18,12 +19,17 @@ const schema = z.object({
 type FormData = z.infer<typeof schema>;
 
 function AdminLogin() {
-  const navigate = useNavigate();
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const { register, handleSubmit, formState: { errors } } = useForm<FormData>({ resolver: zodResolver(schema) });
 
-  const onSubmit = () => {
-    toast.success("Admin access granted", { description: "Welcome back to the control center." });
-    navigate("/admin");
+  const onSubmit = async () => {
+    // The current backend intentionally exposes student authentication only.
+    // Do not simulate admin access in the browser: that would bypass access control.
+    setIsSubmitting(true);
+    toast.error("Admin sign-in is not configured", {
+      description: "Configure a server-side admin authentication endpoint before enabling console access.",
+    });
+    setIsSubmitting(false);
   };
 
   return (
@@ -51,7 +57,9 @@ function AdminLogin() {
             <Input id="otp" placeholder="6-digit code" maxLength={6} {...register("otp")} />
             {errors.otp && <p className="text-xs text-destructive">{errors.otp.message}</p>}
           </div>
-          <Button type="submit" size="lg" className="w-full">Sign In to Console</Button>
+          <Button type="submit" size="lg" className="w-full" disabled={isSubmitting}>
+            {isSubmitting ? "Checking access..." : "Sign In to Console"}
+          </Button>
         </form>
 
         <p className="mt-6 text-center text-sm text-muted-foreground">

@@ -63,10 +63,11 @@ const AdminReports = lazy(() => import("@/pages/admin/AdminReports").then((m) =>
 const AdminNotifications = lazy(() => import("@/pages/admin/AdminNotifications").then((m) => ({ default: m.AdminNotifications })));
 const AdminSettings = lazy(() => import("@/pages/admin/AdminSettings").then((m) => ({ default: m.AdminSettings })));
 
-function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, isLoading } = useAuth();
+function ProtectedRoute({ children, role }: { children: React.ReactNode; role?: "student" | "admin" }) {
+  const { isAuthenticated, isLoading, user } = useAuth();
   if (isLoading) return <LoadingScreen />;
   if (!isAuthenticated) return <Navigate to="/login" replace />;
+  if (role && user?.role !== role) return <Navigate to={user?.role === "admin" ? "/admin" : "/student/dashboard"} replace />;
   return <>{children}</>;
 }
 
@@ -98,7 +99,7 @@ function AppRoutes() {
         <Route path="/admin/login" element={<AdminLogin />} />
 
         {/* Student */}
-        <Route path="/student" element={<ProtectedRoute><StudentLayout /></ProtectedRoute>}>
+        <Route path="/student" element={<ProtectedRoute role="student"><StudentLayout /></ProtectedRoute>}>
           <Route index element={<Navigate to="/student/dashboard" replace />} />
           <Route path="dashboard" element={<StudentDashboard />} />
           <Route path="profile" element={<StudentProfile />} />
@@ -119,10 +120,11 @@ function AppRoutes() {
           <Route path="help" element={<HelpCenter />} />
           <Route path="resources" element={<StudentResources />} />
           <Route path="exams" element={<StudentExams />} />
+          <Route path="*" element={<NotFound />} />
         </Route>
 
         {/* Admin */}
-        <Route path="/admin" element={<AdminLayout />}>
+        <Route path="/admin" element={<ProtectedRoute role="admin"><AdminLayout /></ProtectedRoute>}>
           <Route index element={<AdminDashboard />} />
           <Route path="students" element={<ManageStudents />} />
           <Route path="careers" element={<ManageCareers />} />
@@ -135,6 +137,7 @@ function AppRoutes() {
           <Route path="reports" element={<AdminReports />} />
           <Route path="notifications" element={<AdminNotifications />} />
           <Route path="settings" element={<AdminSettings />} />
+          <Route path="*" element={<NotFound />} />
         </Route>
       </Routes>
     </Suspense>
