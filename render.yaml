@@ -16,7 +16,7 @@ services:
       - key: PYTHON_VERSION
         value: "3.11"
       - key: CORS_ORIGINS
-        sync: false
+        value: https://skillpilot-ai1.onrender.com
       - key: OPENROUTER_API_KEY
         sync: false
       - key: DATABASE_URL
