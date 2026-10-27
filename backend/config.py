@@ -47,7 +47,7 @@ class Config:
     OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
     OPENROUTER_BASE_URL = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1").rstrip("/")
     OPENROUTER_API_URL = os.getenv("OPENROUTER_API_URL", f"{OPENROUTER_BASE_URL}/chat/completions")
-    OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "openrouter/free")
+    OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "openrouter/auto")
     OPENROUTER_TIMEOUT = int(os.getenv("OPENROUTER_TIMEOUT", "60"))
     OPENROUTER_MAX_RETRIES = int(os.getenv("OPENROUTER_MAX_RETRIES", "3"))
 
