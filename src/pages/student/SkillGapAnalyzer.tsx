@@ -268,7 +268,7 @@ function SkillGapAnalyzer() {
           <Card>
             <CardContent className="p-5 space-y-2">
               <h3 className="font-display text-base font-bold">Interview Preparation</h3>
-              <p className="text-sm text-muted-foreground">{analysis.interviewPreparation.join(" | ")}</p>
+              <p className="text-sm text-muted-foreground">{Array.isArray(analysis.interviewPreparation) ? analysis.interviewPreparation.join(" | ") : String(analysis.interviewPreparation ?? "")}</p>
             </CardContent>
           </Card>
 
