@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 
 function ThemeToggle() {
   const { theme, toggleTheme } = useTheme();
-  const isDark = theme === "dark";
+  const isDark = (theme as string) === "dark";
 
   return (
     <Button
