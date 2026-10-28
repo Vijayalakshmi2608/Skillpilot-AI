@@ -42,6 +42,7 @@ function AiRecommendation() {
   const [recommendations, setRecommendations] = useState<CareerRecommendation[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [needsAssessment, setNeedsAssessment] = useState(false);
   const requestInFlight = useRef(false);
 
   const generateRecommendations = useCallback(async () => {
@@ -49,8 +50,19 @@ function AiRecommendation() {
     requestInFlight.current = true;
     setLoading(true);
     setError(null);
+    setNeedsAssessment(false);
 
     try {
+      const assessments = await api.get<{
+        success: boolean;
+        data: Array<{ id: number }>;
+      }>("/assessment/results");
+      if (assessments.data.length === 0) {
+        setNeedsAssessment(true);
+        setRecommendations([]);
+        return;
+      }
+
       const cached = await api.get<{
         success: boolean;
         data: { recommendations: CareerRecommendation[] };
@@ -65,6 +77,14 @@ function AiRecommendation() {
       }>("/ai/career-recommendation", {});
       setRecommendations(response.data.recommendations);
     } catch (requestError) {
+      const status = typeof requestError === "object" && requestError !== null && "status" in requestError
+        ? Number((requestError as { status?: unknown }).status)
+        : undefined;
+      if (status === 409) {
+        setNeedsAssessment(true);
+        setRecommendations([]);
+        return;
+      }
       const message = requestError instanceof Error ? requestError.message : "Unable to generate recommendations.";
       setError(message);
       toast.error("AI recommendations unavailable", { description: message });
@@ -97,6 +117,18 @@ function AiRecommendation() {
         </Card>
       )}
 
+      {needsAssessment && !loading && (
+        <Card>
+          <CardContent className="space-y-3 p-6 text-center">
+            <p className="font-semibold">Complete your career assessment first.</p>
+            <p className="text-sm text-muted-foreground">
+              Recommendations use your saved answers. Complete or retake the assessment to continue.
+            </p>
+            <Link to="/student/assessment"><Button>Go to assessment</Button></Link>
+          </CardContent>
+        </Card>
+      )}
+
       {error && !loading && (
         <Card>
           <CardContent className="space-y-3 p-6 text-center">
@@ -107,18 +139,12 @@ function AiRecommendation() {
         </Card>
       )}
 
-      {!loading && !error && recommendations.length === 0 && (
+      {!loading && !error && !needsAssessment && recommendations.length === 0 && (
         <Card>
           <CardContent className="p-6 text-center text-sm text-muted-foreground">
             No recommendations were returned. Update your profile and try again.
           </CardContent>
         </Card>
-      )}
-
-      {!loading && error?.toLowerCase().includes("complete the career assessment") && (
-        <div className="text-center">
-          <Link to="/student/assessment"><Button>Complete the assessment</Button></Link>
-        </div>
       )}
 
       {!loading && !error && recommendations.length > 0 && (
