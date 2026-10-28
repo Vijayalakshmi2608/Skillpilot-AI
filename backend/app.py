@@ -10,6 +10,7 @@ from sqlalchemy import event, text
 from sqlalchemy.engine import Engine
 from werkzeug.exceptions import HTTPException
 from config import Config
+from assessment_catalog import seed_assessments
 from models import db, Admin, RevokedToken
 from utils.auth import hash_password
 from routes import (auth_bp, content_bp, student_bp, admin_bp, public_bp, career_bp,
@@ -141,12 +142,17 @@ def create_app(config_class=Config):
 
     with app.app_context():
         db.create_all()
+        seeded_questions = seed_assessments()
+        db.session.commit()
         db.session.execute(text("SELECT 1"))
         _create_default_admin()
         db.session.remove()
         registered = ", ".join(sorted(app.blueprints))
         app.logger.setLevel(logging.INFO)
-        print(f"Startup checks passed: SQLite connected; blueprints registered: {registered}")
+        print(
+            "Startup checks passed: SQLite connected; "
+            f"assessment questions added: {seeded_questions}; blueprints registered: {registered}"
+        )
     return app
 
 

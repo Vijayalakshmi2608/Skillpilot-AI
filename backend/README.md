@@ -39,7 +39,9 @@ Update `SECRET_KEY`, `JWT_SECRET_KEY`, `DATABASE_URL`, and `CORS_ORIGINS` in `.e
 
 ## Database and seed data
 
-Tables are created safely on application startup; existing records are not dropped. Populate the catalogue with:
+Tables are created safely on application startup; existing records are not dropped. The eight built-in career assessment questions and their answer options are also inserted at startup when missing. Existing questions and answers are preserved. This ensures an empty Render/SQLite database can serve `GET /api/assessment/questions` without a manual seed command.
+
+Populate the wider career, college, scholarship, and skills catalogue with:
 
 ```powershell
 py -3.11 seed_data.py

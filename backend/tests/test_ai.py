@@ -248,7 +248,10 @@ def test_assessment_recommendation_selection_and_roadmap_end_to_end(client):
     token = _register_and_login(client)
     headers = _auth_headers(token)
     questions = client.get("/api/assessment/questions?per_page=100", headers=headers).get_json()["data"]
-    question = questions[0]
+    question = next(
+        item for item in questions
+        if item["question"] == "Which activity would you choose for a free afternoon?"
+    )
     submission = client.post("/api/assessment/submit", json={
         "answers": [{"questionId": question["id"], "optionId": question["options"][0]["id"]}],
     }, headers=headers)

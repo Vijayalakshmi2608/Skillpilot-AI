@@ -346,6 +346,26 @@ def test_assessment_and_student_access(client, app):
     assert client.get("/api/students/me/notifications", headers=headers).status_code == 200
 
 
+def test_fresh_app_database_has_idempotently_seeded_assessment_questions(client, app):
+    from assessment_catalog import ASSESSMENT_QUESTIONS, seed_assessments
+
+    response = client.get("/api/assessment/questions?per_page=100")
+    assert response.status_code == 200
+    questions = response.get_json()["data"]
+    builtin_texts = {text for text, _category, _options in ASSESSMENT_QUESTIONS}
+    by_text = {question["question"]: question for question in questions}
+    assert builtin_texts <= by_text.keys()
+    assert all(len(by_text[text]["options"]) == 4 for text in builtin_texts)
+
+    with app.app_context():
+        question_count = AssessmentQuestion.query.count()
+        option_count = AssessmentOption.query.count()
+        assert seed_assessments() == 0
+        db.session.commit()
+        assert AssessmentQuestion.query.count() == question_count
+        assert AssessmentOption.query.count() == option_count
+
+
 def test_assessment_scores_selected_domain_and_returns_matching_careers(client, app):
     account = _register(client)
     headers = _authorization(account["accessToken"])
