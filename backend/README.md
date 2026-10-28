@@ -69,6 +69,26 @@ Example:
 Invoke-RestMethod http://127.0.0.1:5000/api/careers -Headers @{ Authorization = 'Bearer <access-token>' }
 ```
 
+## Assessment → recommendations → roadmap
+
+The authenticated student flow uses the existing endpoints and database records:
+
+1. `GET /api/assessment/questions` loads the active questionnaire. `POST /api/assessment/submit` saves the selected question and option IDs and server-calculated domain scores to `assessment_results` for the authenticated user.
+2. `GET /api/ai/career-recommendation` returns the latest saved AI recommendations without another provider call. If none exist yet, `POST /api/ai/career-recommendation` generates them from the latest saved answers and education fields on that same account. It stores the structured result beside the assessment. It ignores client-supplied profile claims as a source of personalization.
+3. The student selects a saved recommendation. `POST /api/ai/roadmap` checks that career against the authenticated student's latest saved recommendations, then sends that recommendation, the stored assessment answers/scores, and the student-entered roadmap constraints to OpenRouter. The response retains the roadmap sections used by the UI and includes chronological `stages` with actions, milestones, duration, resources, estimated cost, and completion criteria.
+4. The frontend saves generated plans through `POST /api/students/me/roadmaps`; records are scoped to the signed-in user and an existing career catalogue entry. A generated plan can still be viewed if the selected career is not in the catalogue, but that plan cannot be persisted until the catalogue supports that career.
+
+All AI endpoints require a student JWT. Missing assessment answers return `409` with a next step; provider failures and malformed structured output return safe JSON errors. Match scores are estimates, not validated predictions. Salary, cost, and labour-market information from the model is not live-verified and must be checked against local official sources.
+
+Run the mocked end-to-end API and provider tests without a real OpenRouter request:
+
+```powershell
+cd backend
+python -m pytest -p no:cacheprovider tests
+```
+
+The tests set dummy signing secrets when none are already present and use mocked provider responses. A real OpenRouter request requires a configured backend key and should be performed separately against a controlled test account.
+
 ## Production notes
 
 Use the production-capable WSGI entry point from this directory:

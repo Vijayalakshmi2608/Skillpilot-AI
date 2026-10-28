@@ -8,7 +8,7 @@ from flask import Blueprint, current_app, request
 from flask_jwt_extended import get_jwt, get_jwt_identity, jwt_required
 from sqlalchemy.exc import SQLAlchemyError
 
-from models import StudentProfile, User, db
+from models import AssessmentOption, AssessmentQuestion, AssessmentResult, StudentProfile, User, db
 from routes import ok, json_body
 from utils.openrouter import OpenRouterClient, OpenRouterError, OpenRouterRateLimitError, OpenRouterTimeoutError
 from utils.responses import error_response, not_found_response, server_error_response
@@ -38,19 +38,27 @@ to provide accurate, data-driven, and personalised career recommendations.
 
 Analyse the student's profile holistically across these dimensions:
 - Academic Performance (marks, class, stream)
-- Student Interests
-- Skills
-- Learning Style (inferred from favourite subjects and study type preference)
-- Personality
-- Career Goal
-- Budget
-- Preferred Location
+- Student Interests shown in recorded answers
+- Skills explicitly stated in recorded answers
+- Learning and working preferences only when explicitly stated
+- Personality only when explicitly stated; do not infer it
+- Career Goal only when explicitly stated
+- Budget and preferred location only when explicitly stated
 - Future Job Trends
 - Industry Demand
+- Every recorded assessment answer and the calculated assessment-domain scores
 
 For each recommended career, provide a concise, evidence-based analysis with the following fields:
 - careerName
 - whyThisCareerMatches
+- careerCategory
+- supportingAnswers (specific answers from the submitted assessment)
+- currentStrengths (only demonstrated or stated in the submitted assessment)
+- skillGaps (skills to develop, distinct from current skills)
+- learningResources (beginner-friendly suggestions; do not invent official links)
+- educationOptions
+- entranceExams
+- entryOpportunities
 - matchScore (integer 0-100)
 - requiredDegree
 - requiredSkills (list)
@@ -67,17 +75,20 @@ For each recommended career, provide a concise, evidence-based analysis with the
 
 Return ONLY a JSON object with this shape:
 {"recommendations":[{"careerName":"...","whyThisCareerMatches":"...","matchScore":75,
+"careerCategory":"...","supportingAnswers":["..."],"currentStrengths":["..."],
+"skillGaps":["..."],"learningResources":["..."],"educationOptions":["..."],
+"entranceExams":["..."],"entryOpportunities":["..."],
 "requiredDegree":"...","requiredSkills":["..."],"salaryRange":"...","futureDemand":"...",
 "advantages":["..."],"challenges":["..."],"requiredCertifications":["..."],
 "suggestedProjects":["..."],"internships":["..."],"higherStudies":["..."],
 "topCompanies":["..."],"roadmapSummary":"..."}]}
 Return 3 to 5 distinct recommendations, use these exact camelCase keys, and keep each string or list item to one concise sentence or phrase.
 Match scores are AI-generated estimates, not measured predictions. Do not present salary, cutoff, or job-market claims as verified facts.
+Do not infer ability or personality from a name, gender, or unrelated demographic detail. Ground explanations in the supplied answers. Mark salary and market information as estimates requiring verification, and never claim live research.
 Do not include markdown, code fences, or explanatory text outside the JSON."""
 
 USER_PROMPT_TEMPLATE = """\
 Student Profile:
-- Name: {name}
 - Class: {student_class}
 - Stream: {stream}
 - Marks: {marks}
@@ -93,11 +104,66 @@ Student Profile:
 Provide 3 to 5 career recommendations in the specified JSON structure. Use only the supplied profile; state when additional information would improve personalisation."""
 
 EXPECTED_KEYS_PER_CAREER = {
-    "careerName", "whyThisCareerMatches", "matchScore", "requiredDegree",
+    "careerName", "whyThisCareerMatches", "careerCategory", "matchScore", "requiredDegree",
     "requiredSkills", "salaryRange", "futureDemand", "advantages", "challenges",
     "requiredCertifications", "suggestedProjects", "internships", "higherStudies",
-    "topCompanies", "roadmapSummary",
+    "topCompanies", "roadmapSummary", "supportingAnswers", "currentStrengths",
+    "skillGaps", "learningResources", "educationOptions", "entranceExams",
+    "entryOpportunities",
 }
+
+RECOMMENDATION_LIST_FIELDS = (
+    "requiredSkills", "advantages", "challenges", "requiredCertifications",
+    "suggestedProjects", "internships", "higherStudies", "topCompanies",
+    "supportingAnswers", "currentStrengths", "skillGaps", "learningResources",
+    "educationOptions", "entranceExams", "entryOpportunities",
+)
+RECOMMENDATION_STRING_FIELDS = (
+    "whyThisCareerMatches", "careerCategory", "requiredDegree", "salaryRange",
+    "futureDemand", "roadmapSummary",
+)
+
+
+def _latest_assessment_context(user: User) -> Optional[Dict[str, Any]]:
+    """Resolve only this authenticated student's saved answers and relevant profile."""
+    assessment = AssessmentResult.query.filter_by(user_id=user.id).order_by(
+        AssessmentResult.created_at.desc()
+    ).first()
+    if assessment is None:
+        return None
+
+    answers = []
+    for answer in assessment.answers if isinstance(assessment.answers, list) else []:
+        if not isinstance(answer, dict):
+            continue
+        try:
+            question = db.session.get(AssessmentQuestion, int(answer.get("questionId")))
+            option = db.session.get(AssessmentOption, int(answer.get("optionId")))
+        except (TypeError, ValueError):
+            continue
+        if not question or not option or option.question_id != question.id:
+            continue
+        answers.append({
+            "question": question.question,
+            "category": question.category,
+            "answer": option.option_text,
+            "scoreTag": option.value,
+        })
+    if not answers:
+        return None
+
+    profile = user.student_profile
+    return {
+        "assessmentId": assessment.id,
+        "answers": answers,
+        "domainScores": assessment.result.get("scores", {}) if isinstance(assessment.result, dict) else {},
+        "education": {
+            "class": profile.student_class if profile else None,
+            "board": profile.board if profile else None,
+            "stream": user.stream,
+            "selfReportedMarks": user.board_score,
+        },
+    }
 
 
 def _current_student() -> Optional[User]:
@@ -139,7 +205,6 @@ def _validate_career_payload(data: Dict[str, Any]) -> Optional[Dict[str, str]]:
 
 def _build_prompt(data: Dict[str, Any]) -> str:
     return USER_PROMPT_TEMPLATE.format(
-        name=data.get("name", "Student"),
         student_class=data.get("class", "Unknown"),
         stream=data.get("stream", "Unknown"),
         marks=data.get("marks", "Not provided"),
@@ -204,14 +269,8 @@ def _normalise_recommendation_response(data: Any) -> Any:
         re.sub(r"[^a-z0-9]", "", field.lower()): field
         for field in EXPECTED_KEYS_PER_CAREER
     }
-    list_fields = (
-        "requiredSkills", "advantages", "challenges", "requiredCertifications",
-        "suggestedProjects", "internships", "higherStudies", "topCompanies",
-    )
-    string_fields = (
-        "whyThisCareerMatches", "requiredDegree", "salaryRange", "futureDemand",
-        "roadmapSummary",
-    )
+    list_fields = RECOMMENDATION_LIST_FIELDS
+    string_fields = RECOMMENDATION_STRING_FIELDS
     normalized_recommendations = []
     for item in recommendations:
         if not isinstance(item, dict):
@@ -276,10 +335,28 @@ def _validate_response_structure(data: Any) -> List[str]:
             errors.append(f"Recommendation {idx + 1} higherStudies must be a list.")
         if not isinstance(rec.get("topCompanies"), list):
             errors.append(f"Recommendation {idx + 1} topCompanies must be a list.")
-        for field in ("whyThisCareerMatches", "requiredDegree", "salaryRange", "futureDemand", "roadmapSummary"):
+        for field in RECOMMENDATION_LIST_FIELDS:
+            if not isinstance(rec.get(field), list) or not all(isinstance(item, str) for item in rec.get(field, [])):
+                errors.append(f"Recommendation {idx + 1} {field} must be a list of strings.")
+        for field in RECOMMENDATION_STRING_FIELDS:
             if not isinstance(rec.get(field), str):
                 errors.append(f"Recommendation {idx + 1} {field} must be a string.")
     return errors
+
+
+@ai_bp.get("/career-recommendation")
+@jwt_required()
+def saved_career_recommendations():
+    user = _current_student()
+    if not user:
+        return not_found_response("Student account not found.")
+    latest = AssessmentResult.query.filter_by(user_id=user.id).order_by(
+        AssessmentResult.created_at.desc()
+    ).first()
+    if latest is None:
+        return error_response("Complete the career assessment before requesting personalized recommendations.", 409)
+    saved = latest.result.get("aiRecommendations", []) if isinstance(latest.result, dict) else []
+    return ok({"recommendations": saved}, "Saved career recommendations loaded.")
 
 
 @ai_bp.post("/career-recommendation")
@@ -293,15 +370,33 @@ def career_recommendation():
     if error:
         return error
 
-    validation_errors = _validate_career_payload(data)
-    if validation_errors:
-        return error_response("Validation failed.", 422, validation_errors)
+    assessment_context = _latest_assessment_context(user)
+    if assessment_context is None:
+        return error_response(
+            "Complete the career assessment before requesting personalized recommendations.", 409
+        )
+
+    profile = assessment_context["education"]
+    recommendation_input = {
+        "name": "Student",
+        "class": profile.get("class") or "Not provided",
+        "stream": profile.get("stream") or "Not provided",
+        "marks": profile.get("selfReportedMarks"),
+        "skills": [],
+        "interests": [],
+        "personality": "Not provided; do not infer",
+        "favouriteSubjects": [],
+        "careerGoal": "Explore careers compatible with the complete assessment",
+        "budget": "Not provided",
+        "preferredLocation": "Not provided",
+        "preferredStudyType": "Not provided",
+    }
+    prompt = _build_prompt(recommendation_input) + "\n\nSaved assessment context (authoritative; do not invent missing answers):\n" + json.dumps(assessment_context, ensure_ascii=False)
 
     if not current_app.config.get("OPENROUTER_API_KEY"):
         logger.error("OpenRouter API key is not configured.")
         return server_error_response("AI service is not configured.")
 
-    prompt = _build_prompt(data)
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": prompt},
@@ -343,7 +438,32 @@ def career_recommendation():
             structure_errors = ["Response was not valid JSON."]
 
         if not structure_errors:
-            return ok({"recommendations": parsed["recommendations"]}, "Career recommendations generated successfully.")
+            recommendations = parsed["recommendations"]
+            # Sort and de-duplicate provider output before storing it with the assessment.
+            seen = set()
+            recommendations = sorted(recommendations, key=lambda item: item["matchScore"], reverse=True)
+            unique_recommendations = []
+            for item in recommendations:
+                career_key = item["careerName"].strip().casefold()
+                if career_key not in seen:
+                    seen.add(career_key)
+                    unique_recommendations.append(item)
+            recommendations = unique_recommendations[:5]
+            latest = AssessmentResult.query.filter_by(user_id=user.id).order_by(
+                AssessmentResult.created_at.desc()
+            ).first()
+            if latest is None or latest.id != assessment_context["assessmentId"]:
+                return error_response("Your assessment changed while recommendations were being generated. Please retry.", 409)
+            result_data = dict(latest.result) if isinstance(latest.result, dict) else {}
+            result_data["aiRecommendations"] = recommendations
+            latest.result = result_data
+            try:
+                db.session.commit()
+            except SQLAlchemyError:
+                db.session.rollback()
+                logger.exception("Unable to save AI recommendations for user %s.", user.id)
+                return server_error_response("Unable to save career recommendations.")
+            return ok({"recommendations": recommendations}, "Career recommendations generated successfully.")
 
         logger.warning(
             "OpenRouter recommendation response invalid for user %s on attempt %s: %s",
@@ -376,8 +496,14 @@ You are a Professional Career Planning Expert with deep expertise in education p
 entrance exams, skill development, internships, higher studies, and job market trends.
 
 Generate a complete, personalised career roadmap from Class 12 to the target career.
+Use the selected AI recommendation and the student's saved assessment answers, domain scores,
+education and explicitly supplied constraints. Adapt the plan to the actual career domain; do not
+force technology stages into medical, law, commerce, design, public service or other fields.
+Never treat unknown information as fact. Label costs, salaries and market claims as estimates
+that need local verification. Do not claim live research or official deadlines.
 
 The roadmap MUST include these sections:
+- stages (chronological list; each object has title, purpose, actions, skills, milestones, estimatedDuration, prerequisites, resources, estimatedCost, completionCriteria, expectedOutcome, priority, dependencies)
 - entranceExams (list of exams with names, eligibility, and preparation tips)
 - degreeSelection (recommended degrees with reasons)
 - semesterWiseLearning (list of semester-wise subjects/skills to focus on)
@@ -398,12 +524,14 @@ The roadmap MUST include these sections:
 - tips (list of practical tips for success)
 
 Return ONLY a valid JSON object with a top-level "roadmap" key containing all these fields. \
+For stages, use arrays of strings for actions, skills, milestones, prerequisites, resources, and dependencies; use a concise string for the other fields. \
 Do not include markdown, code fences, or explanatory text outside the JSON."""
 
 ROADMAP_USER_PROMPT_TEMPLATE = """\
 Student Profile:
-- Name: {name}
 - Selected Career: {selected_career}
+- Saved Recommendation: {selected_recommendation}
+- Saved Assessment Answers and Scores: {assessment_context}
 - Current Skills: {current_skills}
 - Current Education: {current_education}
 - Budget: {budget}
@@ -423,10 +551,11 @@ def _validate_roadmap_payload(data: Dict[str, Any]) -> Optional[Dict[str, str]]:
         errors["currentEducation"] = message
     if message := validate_string(data.get("careerGoal"), "Career Goal", 1, 500):
         errors["careerGoal"] = message
-    if message := validate_string(data.get("budget"), "Budget", 1, 100):
-        errors["budget"] = message
-    if message := validate_string(data.get("location"), "Location", 1, 200):
-        errors["location"] = message
+    for field, label, maximum in (("budget", "Budget", 100), ("location", "Location", 200)):
+        value = data.get(field)
+        if value not in (None, ""):
+            if message := validate_string(value, label, 1, maximum):
+                errors[field] = message
     for field in ("currentSkills",):
         value = data.get(field)
         if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
@@ -434,10 +563,11 @@ def _validate_roadmap_payload(data: Dict[str, Any]) -> Optional[Dict[str, str]]:
     return errors or None
 
 
-def _build_roadmap_prompt(data: Dict[str, Any]) -> str:
+def _build_roadmap_prompt(data: Dict[str, Any], assessment_context: Dict[str, Any], recommendation: Dict[str, Any]) -> str:
     return ROADMAP_USER_PROMPT_TEMPLATE.format(
-        name=data.get("name", "Student"),
         selected_career=data.get("selectedCareer", "Unknown"),
+        selected_recommendation=json.dumps(recommendation, ensure_ascii=False),
+        assessment_context=json.dumps(assessment_context, ensure_ascii=False),
         current_skills=", ".join(data.get("currentSkills", [])) or "Not provided",
         current_education=data.get("currentEducation", "Not provided"),
         budget=data.get("budget", "Not provided"),
@@ -464,6 +594,7 @@ def _normalise_roadmap_payload(data: Dict[str, Any], user: User) -> Dict[str, An
 
 def _validate_roadmap_structure(data: Any) -> List[str]:
     required_keys = {
+        "stages",
         "entranceExams", "degreeSelection", "semesterWiseLearning", "certifications",
         "projects", "internships", "hackathons", "portfolio", "resumePreparation",
         "placementPreparation", "interviewPreparation", "higherStudies", "estimatedTimeline",
@@ -479,6 +610,23 @@ def _validate_roadmap_structure(data: Any) -> List[str]:
     missing = required_keys - set(roadmap.keys())
     if missing:
         return [f"Roadmap is missing fields: {', '.join(sorted(missing))}."]
+    if not isinstance(roadmap.get("stages"), list):
+        return ["'stages' must be an array."]
+    stage_fields = {
+        "title": str, "purpose": str, "actions": list, "skills": list,
+        "milestones": list, "estimatedDuration": str, "prerequisites": list,
+        "resources": list, "estimatedCost": str, "completionCriteria": str,
+        "expectedOutcome": str, "priority": str, "dependencies": list,
+    }
+    for index, stage in enumerate(roadmap["stages"]):
+        if not isinstance(stage, dict) or any(
+            not isinstance(stage.get(field), expected)
+            for field, expected in stage_fields.items()
+        ) or any(
+            not all(isinstance(item, str) for item in stage[field])
+            for field, expected in stage_fields.items() if expected is list and isinstance(stage, dict) and isinstance(stage.get(field), list)
+        ):
+            return [f"Stage {index + 1} does not match the roadmap stage contract."]
     return []
 
 
@@ -498,11 +646,26 @@ def career_roadmap():
     if validation_errors:
         return error_response("Validation failed.", 422, validation_errors)
 
+    assessment_context = _latest_assessment_context(user)
+    if assessment_context is None:
+        return error_response("Complete the career assessment before generating a personalized roadmap.", 409)
+    latest = AssessmentResult.query.filter_by(user_id=user.id).order_by(
+        AssessmentResult.created_at.desc()
+    ).first()
+    saved_recommendations = latest.result.get("aiRecommendations", []) if isinstance(latest.result, dict) else []
+    selected_name = data.get("selectedCareer", "").strip().casefold() if isinstance(data.get("selectedCareer"), str) else ""
+    recommendation = next((item for item in saved_recommendations
+                           if isinstance(item, dict)
+                           and isinstance(item.get("careerName"), str)
+                           and item["careerName"].strip().casefold() == selected_name), None)
+    if recommendation is None:
+        return error_response("Choose a career from your saved AI recommendations before generating a roadmap.", 409)
+
     if not current_app.config.get("OPENROUTER_API_KEY"):
         logger.warning("OpenRouter is not configured for user %s.", user.id)
         return server_error_response("AI service is not configured.")
 
-    prompt = _build_roadmap_prompt(data)
+    prompt = _build_roadmap_prompt(data, assessment_context, recommendation)
     messages = [
         {"role": "system", "content": ROADMAP_SYSTEM_PROMPT},
         {"role": "user", "content": prompt},
@@ -513,7 +676,7 @@ def career_roadmap():
             timeout=min(current_app.config["OPENROUTER_TIMEOUT"], 30),
             max_retries=1,
         )
-        result = client.chat_completion(messages=messages, temperature=0.5, max_tokens=2048)
+        result = client.chat_completion(messages=messages, temperature=0.5, max_tokens=4096)
         raw_content = result["content"]
     except OpenRouterRateLimitError as exc:
         logger.warning("OpenRouter rate limit hit for user %s: %s", user.id, exc)

@@ -13,8 +13,16 @@ import { api } from "@/lib/api";
 
 type CareerRecommendation = {
   careerName: string;
+  careerCategory?: string;
   whyThisCareerMatches: string;
   matchScore: number;
+  supportingAnswers?: string[];
+  currentStrengths?: string[];
+  skillGaps?: string[];
+  learningResources?: string[];
+  educationOptions?: string[];
+  entranceExams?: string[];
+  entryOpportunities?: string[];
   requiredDegree: string;
   requiredSkills: string[];
   salaryRange: string;
@@ -42,27 +50,19 @@ function AiRecommendation() {
     setLoading(true);
     setError(null);
 
-    const marks = Number(user.boardScore);
-    const payload = {
-      name: user.fullName,
-      class: user.studentClass || user.stream || "Student",
-      stream: user.stream || "Undeclared",
-      ...(Number.isFinite(marks) && user.boardScore ? { marks } : {}),
-      skills: user.stream ? [user.stream] : [],
-      interests: user.stream ? [user.stream] : [],
-      personality: "Career interests to be explored",
-      favouriteSubjects: user.stream ? [user.stream] : [],
-      careerGoal: "Explore suitable career options",
-      budget: "Not specified",
-      preferredLocation: user.city || "Not specified",
-      preferredStudyType: "Undergraduate",
-    };
-
     try {
+      const cached = await api.get<{
+        success: boolean;
+        data: { recommendations: CareerRecommendation[] };
+      }>("/ai/career-recommendation");
+      if (cached.data.recommendations.length > 0) {
+        setRecommendations(cached.data.recommendations);
+        return;
+      }
       const response = await api.post<{
         success: boolean;
         data: { recommendations: CareerRecommendation[] };
-      }>("/ai/career-recommendation", payload);
+      }>("/ai/career-recommendation", {});
       setRecommendations(response.data.recommendations);
     } catch (requestError) {
       const message = requestError instanceof Error ? requestError.message : "Unable to generate recommendations.";
@@ -82,7 +82,7 @@ function AiRecommendation() {
     <div className="space-y-6">
       <PageHeader
         title="AI Career Recommendations"
-        description="Career suggestions generated from your account profile."
+        description="Recommendations grounded in your latest saved assessment answers. Match scores are estimates, not predictions."
         breadcrumbs={[{ label: "Dashboard", to: "/student/dashboard" }, { label: "AI Recommendation" }]}
         icon={BrainCircuit}
         actions={recommendations.length > 0 ? <Badge variant="accent"><Sparkles className="h-3 w-3" /> AI generated</Badge> : undefined}
@@ -115,6 +115,12 @@ function AiRecommendation() {
         </Card>
       )}
 
+      {!loading && error?.toLowerCase().includes("complete the career assessment") && (
+        <div className="text-center">
+          <Link to="/student/assessment"><Button>Complete the assessment</Button></Link>
+        </div>
+      )}
+
       {!loading && !error && recommendations.length > 0 && (
         <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
           {recommendations.map((career, index) => (
@@ -123,7 +129,10 @@ function AiRecommendation() {
                 <div className="h-1.5 w-full bg-gradient-to-r from-blue-600 to-indigo-600" />
                 <CardContent className="space-y-4 p-5">
                   <div className="flex items-start justify-between gap-3">
-                    <h2 className="font-display text-lg font-bold">{career.careerName}</h2>
+                    <div>
+                      <h2 className="font-display text-lg font-bold">{career.careerName}</h2>
+                      {career.careerCategory && <p className="mt-1 text-xs text-muted-foreground">{career.careerCategory}</p>}
+                    </div>
                     <Badge variant="secondary">{career.futureDemand}</Badge>
                   </div>
                   <div className="flex justify-between text-xs">
@@ -149,8 +158,33 @@ function AiRecommendation() {
                     </div>
                   </div>
                   <p className="text-xs leading-relaxed text-muted-foreground">{career.roadmapSummary}</p>
-                  <Link to="/student/roadmap">
-                    <Button variant="outline" className="w-full">Explore Career Roadmap</Button>
+                  <details className="rounded-lg border p-3 text-sm">
+                    <summary className="cursor-pointer font-semibold">View Full Details</summary>
+                    <div className="mt-3 space-y-3 text-muted-foreground">
+                      {[
+                        ["Assessment answers supporting this match", career.supportingAnswers],
+                        ["Current strengths", career.currentStrengths || career.advantages],
+                        ["Development areas", career.skillGaps || career.challenges],
+                        ["Education options", career.educationOptions],
+                        ["Entrance exams", career.entranceExams],
+                        ["Beginner learning resources", career.learningResources],
+                        ["Projects", career.suggestedProjects],
+                        ["Entry opportunities", career.entryOpportunities || career.internships],
+                        ["Higher studies", career.higherStudies],
+                      ].map(([label, items]) => Array.isArray(items) && items.length > 0 ? (
+                        <div key={label as string}>
+                          <p className="font-semibold text-foreground">{label as string}</p>
+                          <ul className="list-inside list-disc">{(items as string[]).map((item) => <li key={item}>{item}</li>)}</ul>
+                        </div>
+                      ) : null)}
+                      <p><span className="font-semibold text-foreground">Required qualifications:</span> {career.requiredDegree}</p>
+                      <p><span className="font-semibold text-foreground">Salary:</span> {career.salaryRange} (indicative estimate; verify for your location and experience level)</p>
+                      <p><span className="font-semibold text-foreground">Future outlook:</span> {career.futureDemand} (not live market data)</p>
+                      <p><span className="font-semibold text-foreground">Skills to acquire:</span> {career.requiredSkills.join(", ")}</p>
+                    </div>
+                  </details>
+                  <Link to="/student/roadmap" state={{ selectedCareer: career.careerName }}>
+                    <Button variant="outline" className="w-full">Choose This Career</Button>
                   </Link>
                 </CardContent>
               </Card>

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link, useLocation } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Award, BookOpen, Briefcase, Code2, Flag, GraduationCap, Rocket, Target, Loader2 } from "lucide-react";
 import { PageHeader } from "@/components/common/PageHeader";
@@ -12,7 +13,24 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 import { api } from "@/lib/api";
 
+type RoadmapStage = {
+  title: string;
+  purpose: string;
+  actions: string[];
+  skills: string[];
+  milestones: string[];
+  estimatedDuration: string;
+  prerequisites: string[];
+  resources: string[];
+  estimatedCost: string;
+  completionCriteria: string;
+  expectedOutcome: string;
+  priority: string;
+  dependencies: string[];
+};
+
 type RoadmapData = {
+  stages?: RoadmapStage[];
   entranceExams: Array<{ name: string; eligibility: string; prepTips: string }>;
   degreeSelection: Array<{ degree: string; reason: string }>;
   semesterWiseLearning: Array<{ semester: string; focus: string }>;
@@ -34,6 +52,7 @@ type RoadmapData = {
 };
 
 const emptyRoadmap: RoadmapData = {
+  stages: [],
   entranceExams: [],
   degreeSelection: [],
   semesterWiseLearning: [],
@@ -66,6 +85,7 @@ function isRoadmapData(value: unknown): value is RoadmapData {
 
 function CareerRoadmap() {
   const { isAuthenticated, isLoading: authLoading, user } = useAuth();
+  const routeLocation = useLocation();
   const [roadmap, setRoadmap] = useState<RoadmapData>(emptyRoadmap);
   const [loading, setLoading] = useState(false);
   const [selectedCareer, setSelectedCareer] = useState("");
@@ -76,6 +96,8 @@ function CareerRoadmap() {
   const [careerGoal, setCareerGoal] = useState("");
   const [savedRoadmapId, setSavedRoadmapId] = useState<number | null>(null);
   const [savedRoadmapsLoading, setSavedRoadmapsLoading] = useState(true);
+  const [generationError, setGenerationError] = useState<string | null>(null);
+  const selectedFromRecommendations = (routeLocation.state as { selectedCareer?: string } | null)?.selectedCareer;
 
   const canGenerate = useMemo(() => selectedCareer && currentEducation && careerGoal, [selectedCareer, currentEducation, careerGoal]);
 
@@ -88,9 +110,14 @@ function CareerRoadmap() {
   useEffect(() => {
     if (!user) return;
     setCurrentEducation((value) => value || user.studentClass || user.stream || "");
-    setCurrentSkills((value) => value || user.stream || "");
     setLocation((value) => value || user.city || "");
   }, [user]);
+
+  useEffect(() => {
+    if (!selectedFromRecommendations) return;
+    setSelectedCareer(selectedFromRecommendations);
+    setCareerGoal((value) => value || `Prepare for a career as ${selectedFromRecommendations}`);
+  }, [selectedFromRecommendations]);
 
   useEffect(() => {
     if (!user) return;
@@ -124,6 +151,7 @@ function CareerRoadmap() {
       return;
     }
     setLoading(true);
+    setGenerationError(null);
     try {
       const data = await api.post<{ success: boolean; data: { roadmap: RoadmapData } }>("/ai/roadmap", {
         name: user?.fullName || "Student",
@@ -150,6 +178,7 @@ function CareerRoadmap() {
       toast.success(roadmapSaved ? "AI roadmap generated and saved." : "AI roadmap generated.");
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to generate roadmap";
+      setGenerationError(message);
       toast.error("Roadmap generation failed", { description: message });
     } finally {
       setLoading(false);
@@ -201,11 +230,51 @@ function CareerRoadmap() {
             {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Flag className="h-4 w-4" />}
             {loading ? "Generating..." : "Generate Roadmap"}
           </Button>
+          {!selectedFromRecommendations && !savedRoadmapId && (
+            <p className="text-xs text-muted-foreground">
+              To keep this roadmap tied to your assessment, first generate recommendations and choose a career.
+              <Link className="ml-1 underline" to="/student/recommendation">View recommendations</Link>
+            </p>
+          )}
         </CardContent>
       </Card>
 
+      {generationError && (
+        <Card role="alert">
+          <CardContent className="flex flex-wrap items-center justify-between gap-3 p-4">
+            <p className="text-sm text-destructive">{generationError}</p>
+            <Button variant="outline" onClick={generateRoadmap} disabled={!canGenerate || loading}>Retry roadmap generation</Button>
+          </CardContent>
+        </Card>
+      )}
+
       {roadmap.estimatedTimeline && (
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
+          {(roadmap.stages || []).length > 0 && (
+            <Card>
+              <CardContent className="space-y-3 p-5">
+                <h3 className="font-display text-lg font-bold">Your Roadmap Stages</h3>
+                {(roadmap.stages || []).map((stage, index) => (
+                  <details key={`${stage.title}-${index}`} className="rounded-xl border p-4" open={index === 0}>
+                    <summary className="cursor-pointer font-semibold">
+                      <span className="mr-2 text-primary">{index + 1}.</span>{stage.title}
+                      <Badge className="ml-2" variant="secondary">{stage.estimatedDuration}</Badge>
+                      <Badge className="ml-2" variant="outline">{stage.priority}</Badge>
+                    </summary>
+                    <div className="mt-3 grid gap-3 text-sm sm:grid-cols-2">
+                      <p><span className="font-semibold">Purpose:</span> {stage.purpose}</p>
+                      <p><span className="font-semibold">Expected outcome:</span> {stage.expectedOutcome}</p>
+                      <div><p className="font-semibold">Actions and milestones</p><ul className="list-inside list-disc text-muted-foreground">{[...stage.actions, ...stage.milestones].map((item) => <li key={item}>{item}</li>)}</ul></div>
+                      <div><p className="font-semibold">Skills to build</p><p className="text-muted-foreground">{stage.skills.join(", ") || "Not specified"}</p></div>
+                      <div><p className="font-semibold">Prerequisites and dependencies</p><p className="text-muted-foreground">{[...stage.prerequisites, ...stage.dependencies].join(", ") || "None specified"}</p></div>
+                      <div><p className="font-semibold">Resources and estimated cost</p><p className="text-muted-foreground">{stage.resources.join(", ") || "No specific resource listed"} · {stage.estimatedCost || "Verify costs locally"}</p></div>
+                      <p className="sm:col-span-2"><span className="font-semibold">Completion criteria:</span> {stage.completionCriteria}</p>
+                    </div>
+                  </details>
+                ))}
+              </CardContent>
+            </Card>
+          )}
           <Card>
             <CardContent className="p-5">
               <h3 className="font-display text-lg font-bold">Estimated Timeline</h3>

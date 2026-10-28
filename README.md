@@ -71,13 +71,19 @@ Copy the examples; do not commit `.env`, `.env.local`, or real credentials. Fron
 
 Invalid or missing production secrets and missing, invalid, or wildcard production CORS settings stop startup with actionable messages; secret values are not included in those messages.
 
+## Assessment and personalized planning flow
+
+The student assessment stores the selected answers and server-computed domain scores. The AI recommendations page reads saved recommendations first and generates them from the authenticated student's latest saved assessment when needed. Results are saved alongside that assessment, and the student can choose a recommendation to carry into roadmap generation. Roadmap generation uses the selected saved recommendation, saved assessment answers/scores, and explicitly supplied roadmap constraints. Student records remain scoped to the authenticated account. See [`backend/README.md`](backend/README.md) for the endpoint sequence and API test command.
+
+AI match scores are estimates, not validated predictions. Salary, cost, and job-market details are not live-verified and need checking with current local sources.
+
 The optional development-only `backend/seed.py` script also reads `SEED_ADMIN_NAME`, `SEED_ADMIN_EMAIL`, `SEED_ADMIN_PASSWORD`, `SEED_STUDENT_NAME`, `SEED_STUDENT_EMAIL`, and `SEED_STUDENT_PASSWORD`. Do not run this demonstration-account seeder on a production database.
 
 ## Database and persistence
 
 On startup, the backend creates missing tables and verifies a SQLite connection. `create_all()` does not drop existing data, but it is not a schema migration system and does not update existing tables. `backend/seed_data.py` contains catalogue seed data and is intended to be run only when appropriate; `backend/seed.py` creates demonstration accounts and must not be used with production data.
 
-The repository already tracks `backend/database.db`. This file was left unchanged; review its intended contents and privacy before publishing or using it as a deployment database. For hosted deployments, configure `DATABASE_URL` to a SQLite file on a **durable, writable persistent volume**. A container's working directory or temporary filesystem is not a durable volume. Back up the file before any upgrade or data move. Never point multiple app instances at a local SQLite file on independent disks.
+The existing `backend/database.db` file is preserved locally and is excluded from the Git index so its contents cannot be added to future commits by accident. The ignore rule does not remove copies from earlier Git history; review repository history and follow your hosting provider's secret/data-removal process if this database ever contained private data. For hosted deployments, configure `DATABASE_URL` to a SQLite file on a **durable, writable persistent volume**. A container's working directory or temporary filesystem is not a durable volume. Back up the file before any upgrade or data move. Never point multiple app instances at a local SQLite file on independent disks.
 
 SQLite is a single-file database with limited concurrent writes. It is suitable for a modest, single-instance deployment with reliable persistent storage and backups, not horizontally scaled instances or high write concurrency. Those cases need a managed server database and a planned database-driver/schema migration; no database migration is performed by these deployment instructions.
 

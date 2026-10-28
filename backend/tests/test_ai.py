@@ -1,5 +1,6 @@
 """Tests for the AI career recommendation endpoint."""
 import json
+import os
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -19,8 +20,11 @@ def _ensure_sys_path():
 
 _ensure_sys_path()
 
+os.environ.setdefault("SECRET_KEY", "test-default-secret-key-for-module-import-only")
+os.environ.setdefault("JWT_SECRET_KEY", "test-default-jwt-secret-for-module-import-only")
+
 from app import create_app  # noqa: E402
-from models import User, db  # noqa: E402
+from models import AssessmentOption, AssessmentQuestion, AssessmentResult, Career, CareerDomain, User, db  # noqa: E402
 
 
 class TestAIConfig:
@@ -61,13 +65,45 @@ def client(app):
     return app.test_client()
 
 
-def _register_and_login(client):
+def _register_and_login(
+    client,
+    email="ai-student@example.test",
+    answer="Investigate a science question and compare the evidence",
+    score_tag="research",
+):
     response = client.post("/api/auth/register", json={
         "fullName": "AI Test Student",
-        "email": "ai-student@example.test",
+        "email": email,
         "password": "SecurePass123!",
     })
     assert response.status_code == 201
+    user_id = int(response.get_json()["data"]["user"]["id"])
+    with client.application.app_context():
+        question = AssessmentQuestion(
+            question="Which activity would you choose for a free afternoon?",
+            category="interests",
+            display_order=1,
+        )
+        db.session.add(question)
+        db.session.flush()
+        option = AssessmentOption(
+            question_id=question.id,
+            option_text=answer,
+            value=score_tag,
+            display_order=1,
+        )
+        db.session.add(option)
+        db.session.flush()
+        db.session.add(AssessmentResult(
+            user_id=user_id,
+            answers=[{"questionId": question.id, "optionId": option.id}],
+            result={"scores": {"research": 1}, "recommendations": [], "aiRecommendations": [{
+                "careerName": "Data Scientist", "matchScore": 85,
+                "whyThisCareerMatches": "Your selected answer shows interest in evidence and research.",
+                "currentStrengths": ["Curiosity"], "skillGaps": ["Statistics"],
+            }]},
+        ))
+        db.session.commit()
     return response.get_json()["data"]["accessToken"]
 
 
@@ -208,25 +244,122 @@ def test_career_recommendation_success(client):
     assert len(rec["topCompanies"]) == 5
 
 
+def test_assessment_recommendation_selection_and_roadmap_end_to_end(client):
+    token = _register_and_login(client)
+    headers = _auth_headers(token)
+    questions = client.get("/api/assessment/questions?per_page=100", headers=headers).get_json()["data"]
+    question = questions[0]
+    submission = client.post("/api/assessment/submit", json={
+        "answers": [{"questionId": question["id"], "optionId": question["options"][0]["id"]}],
+    }, headers=headers)
+    assert submission.status_code == 201
+
+    with client.application.app_context():
+        domain = CareerDomain(name="Data Careers", slug="data-careers", description="Data and research careers")
+        db.session.add(domain)
+        db.session.flush()
+        db.session.add(Career(
+            domain_id=domain.id, title="Data Scientist", description="Analyzes data for evidence-based insight.",
+            skills=["Statistics"], education_path=["Relevant degree"], is_active=True,
+        ))
+        db.session.commit()
+
+    with patch("routes.ai.OpenRouterClient") as MockClient:
+        MockClient.return_value.chat_completion.side_effect = [
+            _build_mock_response(), _build_roadmap_mock_response(),
+        ]
+        recommendation_response = client.post("/api/ai/career-recommendation", json={}, headers=headers)
+        assert recommendation_response.status_code == 200
+        selected = recommendation_response.get_json()["data"]["recommendations"][0]
+        assert selected["careerName"] == "Data Scientist"
+
+        roadmap_response = client.post("/api/ai/roadmap", json={
+            "selectedCareer": selected["careerName"],
+            "currentSkills": ["Evidence gathering"],
+            "currentEducation": "Class 12",
+            "budget": "Not specified",
+            "location": "Not specified",
+            "careerGoal": "Explore data science study and entry paths",
+        }, headers=headers)
+
+    assert roadmap_response.status_code == 200
+    roadmap_prompt = MockClient.return_value.chat_completion.call_args_list[1].kwargs["messages"][1]["content"]
+    assert "Investigate a science question and compare the evidence" in roadmap_prompt
+    assert '"careerName": "Data Scientist"' in roadmap_prompt
+    assert "Evidence gathering" in roadmap_prompt
+    assert roadmap_response.get_json()["data"]["roadmap"]["stages"][0]["title"] == "Build research foundations"
+    saved = client.post("/api/students/me/roadmaps", json={
+        "careerTitle": selected["careerName"],
+        "milestones": roadmap_response.get_json()["data"]["roadmap"],
+    }, headers=headers)
+    assert saved.status_code == 201
+    retrieved = client.get("/api/students/me/roadmaps", headers=headers)
+    assert retrieved.status_code == 200
+    assert retrieved.get_json()["data"][0]["title"] == selected["careerName"]
+
+
+def test_recommendation_and_roadmap_require_saved_assessment(client):
+    response = client.post("/api/auth/register", json={
+        "fullName": "No Assessment Student",
+        "email": "no-assessment@example.test",
+        "password": "SecurePass123!",
+    })
+    token = response.get_json()["data"]["accessToken"]
+    headers = _auth_headers(token)
+    assert client.get("/api/ai/career-recommendation", headers=headers).status_code == 409
+    response = client.post("/api/ai/roadmap", json=ROADMAP_PAYLOAD, headers=headers)
+    assert response.status_code == 409
+
+
+def test_roadmap_requires_career_from_saved_recommendations(client):
+    token = _register_and_login(client)
+    payload = dict(ROADMAP_PAYLOAD, selectedCareer="Unrelated career")
+    response = client.post("/api/ai/roadmap", json=payload, headers=_auth_headers(token))
+    assert response.status_code == 409
+    assert "saved AI recommendations" in response.get_json()["error"]
+
+
 def test_career_recommendation_requires_auth(client):
     response = client.post("/api/ai/career-recommendation", json=VALID_PAYLOAD)
     assert response.status_code == 401
 
 
-def test_career_recommendation_validation_errors(client):
+def test_career_recommendation_uses_saved_assessment_not_client_profile(client):
     token = _register_and_login(client)
     headers = _auth_headers(token)
+    with patch("routes.ai.OpenRouterClient") as MockClient:
+        MockClient.return_value.chat_completion.return_value = _build_mock_response()
+        response = client.post("/api/ai/career-recommendation", json={
+            "name": "A different person", "interests": ["unrelated client supplied value"],
+        }, headers=headers)
+    assert response.status_code == 200
+    prompt = MockClient.return_value.chat_completion.call_args.kwargs["messages"][1]["content"]
+    assert "Investigate a science question and compare the evidence" in prompt
+    assert "unrelated client supplied value" not in prompt
+    saved = client.get("/api/ai/career-recommendation", headers=headers)
+    assert saved.status_code == 200
+    assert saved.get_json()["data"]["recommendations"][0]["careerName"] == "Data Scientist"
 
-    invalid_payloads = [
-        ({}, "Missing required fields"),
-        ({"name": "A", "class": "Class 12", "stream": "Science", "marks": 92, "skills": "not-a-list", "interests": ["Tech"], "personality": "OK", "favouriteSubjects": ["Math"], "careerGoal": "Doctor", "budget": "5L", "preferredLocation": "Delhi", "preferredStudyType": "UG"}, "skills must be a list"),
-        ({"name": "A", "class": "Class 12", "stream": "Science", "marks": 150, "skills": ["Python"], "interests": ["Tech"], "personality": "OK", "favouriteSubjects": ["Math"], "careerGoal": "Doctor", "budget": "5L", "preferredLocation": "Delhi", "preferredStudyType": "UG"}, "marks out of range"),
-        ({"name": "AB", "class": "", "stream": "Science", "marks": 92, "skills": ["Python"], "interests": ["Tech"], "personality": "OK", "favouriteSubjects": ["Math"], "careerGoal": "Doctor", "budget": "5L", "preferredLocation": "Delhi", "preferredStudyType": "UG"}, "empty class"),
-    ]
 
-    for payload, description in invalid_payloads:
-        response = client.post("/api/ai/career-recommendation", json=payload, headers=headers)
-        assert response.status_code == 422, f"Expected 422 for: {description}"
+def test_distinct_assessment_profiles_produce_distinct_model_inputs(client):
+    first_token = _register_and_login(client, "research-profile@example.test")
+    second_token = _register_and_login(
+        client,
+        "teaching-profile@example.test",
+        "Help younger students understand a difficult topic",
+        "education",
+    )
+    with patch("routes.ai.OpenRouterClient") as MockClient:
+        MockClient.return_value.chat_completion.side_effect = [
+            _build_mock_response(), _build_mock_response(),
+        ]
+        client.post("/api/ai/career-recommendation", json={}, headers=_auth_headers(first_token))
+        client.post("/api/ai/career-recommendation", json={}, headers=_auth_headers(second_token))
+
+    prompts = [call.kwargs["messages"][1]["content"] for call in MockClient.return_value.chat_completion.call_args_list]
+    assert "Investigate a science question" in prompts[0]
+    assert "Help younger students" in prompts[1]
+    assert prompts[0] != prompts[1]
 
 
 def test_career_recommendation_openrouter_rate_limit(client):
@@ -375,6 +508,16 @@ def _build_roadmap_mock_response():
     return {
         "content": json.dumps({
             "roadmap": {
+                "stages": [{
+                    "title": "Build research foundations", "purpose": "Prepare for data-focused study.",
+                    "actions": ["Review probability and statistics"], "skills": ["Statistics"],
+                    "milestones": ["Complete a small analysis"], "estimatedDuration": "3 months",
+                    "prerequisites": ["Class 12 mathematics"], "resources": ["Introductory statistics text"],
+                    "estimatedCost": "Free to low cost; verify local options",
+                    "completionCriteria": "Explain and reproduce a basic analysis.",
+                    "expectedOutcome": "Ready for introductory data coursework.",
+                    "priority": "High", "dependencies": [],
+                }],
                 "entranceExams": [{"name": "JEE Main", "eligibility": "Class 12", "prepTips": "Focus on Physics, Chemistry, Math"}],
                 "degreeSelection": [{"degree": "B.Tech in CS", "reason": "Strong foundation in programming"}],
                 "semesterWiseLearning": [{"semester": "Sem 1", "focus": "Python programming"}],
@@ -414,6 +557,11 @@ def test_career_roadmap_success(client):
     assert "roadmap" in body["data"]
     assert body["data"]["roadmap"]["estimatedTimeline"] == "4 years"
     assert len(body["data"]["roadmap"]["monthlyGoals"]) == 2
+    prompt = MockClient.return_value.chat_completion.call_args.kwargs["messages"][1]["content"]
+    assert "Investigate a science question and compare the evidence" in prompt
+    assert '"careerName": "Data Scientist"' in prompt
+    assert "Class 12" in prompt
+    assert len(body["data"]["roadmap"]["stages"]) == 1
 
 
 def test_career_roadmap_requires_auth(client):

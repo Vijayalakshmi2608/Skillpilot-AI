@@ -1,5 +1,6 @@
 """End-to-end Flask test_client coverage for the currently registered API contract."""
 from datetime import date
+import os
 from pathlib import Path
 import sys
 
@@ -9,6 +10,8 @@ from flask_jwt_extended import create_access_token
 # Tests run from the repository root, while application modules use the
 # existing backend-as-import-root architecture.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+os.environ.setdefault("SECRET_KEY", "test-default-secret-key-for-module-import-only")
+os.environ.setdefault("JWT_SECRET_KEY", "test-default-jwt-secret-for-module-import-only")
 
 from app import create_app
 from config import Config
